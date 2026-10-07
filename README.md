@@ -2,7 +2,7 @@
 
 A Notion-style timeline for your daily routine, inside Obsidian: colored task bars on an hour axis, groups and filters, drag-to-connect dependency arrows, and an inline block you can embed in any note.
 
-> **Status: early release (v0.2.0).** It type-checks and bundles cleanly, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
+> **Status: early release (v0.3.0).** It renders correctly in a headless DOM smoke test across every layout and zoom, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
 
 ## Install
 
@@ -17,8 +17,14 @@ Requires Obsidian 1.4.0 or newer. Works on desktop and mobile.
 
 ## Features
 
+- **Three layouts**: Table, Board and Timeline. Click the sliders icon (**View settings**) in the toolbar and pick one under **Layout**. Same tasks, same filters, different view
+  - **Table**: one row per task (done, name, start, end, group, repeat, comes after). Click a row to edit
+  - **Board**: columns by status (To do / Done), or by group when grouping is set to Group. Drag a card to another column to change its status or group
+- **Zoom dropdown** (Timeline): Hours, Day, Week, Bi-week, Month, Quarter, Year, 5 Years
+  - **Day** fits all 24 hours in the view without scrolling. **Hours** zooms in so you can scroll through the day
+  - **Week and larger** show one column per day. Daily routines appear as a bar across the whole range, one-off tasks on their date. These views are read-only: click a bar to edit it
 - **Hour axis** across the top, one row per task, and a **+ New** row at the bottom
-- **Day navigation**: previous, Today, next
+- **Navigation**: previous, Today, next. It steps by the current zoom (a day, a week, a month, and so on)
 - **Red current-time line** with a dot at the top, updated every minute on today's view
 - **Colorful rounded bars**: nine Notion-style colors, chosen per task, with matching light and dark theme tints
 - **Move and resize**: drag a bar to move it earlier or later, drag either edge to change the start or end. Snaps to 15 minutes
@@ -56,6 +62,8 @@ All lines are optional:
 | `group` | Group rows by `group` or `status` |
 | `hideDone` | `true` hides completed tasks |
 | `filter` | Comma-separated group names to show |
+| `layout` | `timeline` (default), `table` or `board` |
+| `zoom` | `hours`, `day` (default), `week`, `biweek`, `month`, `quarter`, `year` or `5years` |
 
 ## Data
 
@@ -63,7 +71,9 @@ Tasks are stored in the plugin's own data (`.obsidian/plugins/routine-timeline/d
 
 ## Limitations
 
-- Shows one day at a time, with no zoom
+- Repeating tasks support **every day** only. There is no weekly or custom repeat yet
+- Week, Bi-week, Month, Quarter, Year and 5 Years zooms are read-only, and dependency arrows are only drawn in Hours and Day
+- Board drag and drop uses the browser's drag events, so it works on desktop but not by touch (use the checkbox or the editor on mobile)
 - No ← → buttons for bars outside the visible area (the current-time line, dragging and resizing cover most of that)
 - Inline embedding in Live Preview is the least tested part
 
