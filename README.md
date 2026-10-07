@@ -2,7 +2,7 @@
 
 A Notion-style timeline for your daily routine, inside Obsidian: colored task bars on an hour axis, groups and filters, drag-to-connect dependency arrows, and an inline block you can embed in any note.
 
-> **Status: early release (v0.3.0).** It renders correctly in a headless DOM smoke test across every layout and zoom, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
+> **Status: early release (v0.4.0).** It renders correctly in a headless DOM smoke test across every layout and zoom, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
 
 ## Install
 
@@ -22,7 +22,7 @@ Requires Obsidian 1.4.0 or newer. Works on desktop and mobile.
   - **Board**: columns by status (To do / Done), or by group when grouping is set to Group. Drag a card to another column to change its status or group
 - **Zoom dropdown** (Timeline): Hours, Day, Week, Bi-week, Month, Quarter, Year, 5 Years
   - **Day** fits all 24 hours in the view without scrolling. **Hours** zooms in so you can scroll through the day
-  - **Week and larger** show one column per day. Daily routines appear as a bar across the whole range, one-off tasks on their date. These views are read-only: click a bar to edit it
+  - **Week and larger** show one column per day. A repeating task appears only on the days it repeats: at its start time inside the day column in Week and Bi-week, and as a mark per day (consecutive days merge) in Month and larger. These views are read-only: click a bar to edit it
 - **Hour axis** across the top, one row per task, and a **+ New** row at the bottom
 - **Navigation**: previous, Today, next. It steps by the current zoom (a day, a week, a month, and so on)
 - **Red current-time line** with a dot at the top, updated every minute on today's view
@@ -30,7 +30,8 @@ Requires Obsidian 1.4.0 or newer. Works on desktop and mobile.
 - **Move and resize**: drag a bar to move it earlier or later, drag either edge to change the start or end. Snaps to 15 minutes
 - **Dependency arrows**: drag from the small dot at the end of a bar onto another bar. A task can have several arrows into it. Tap an arrow to select it, then tap the ✕ to remove it
   - If a task starts before the one it follows ends, the arrow turns **red and dashed**
-- **Daily routines**: tasks can repeat every day, with a done checkbox tracked separately for each day
+- **Repeating tasks**: set **Repeat** in the task editor to *Does not repeat*, *Every day* or *On specific days of the week* (for example only Tue and Thu). A done checkbox is tracked separately for each day
+- **New tasks** start at the time you pick and default to **25 minutes** long. Changing the start moves the end with it until you set the end yourself
 - **Groups and filters**: search box, a Filter menu (hide completed, pick groups) and a Group menu (none, by group, by status). Group headers collapse when tapped
 - **Inline in a note** (see below)
 - Opens with five example routine tasks you can edit or delete
@@ -67,11 +68,12 @@ All lines are optional:
 
 ## Data
 
-Tasks are stored in the plugin's own data (`.obsidian/plugins/routine-timeline/data.json`), not in your notes. This keeps it simple and works on mobile. Moving a daily-routine task changes its time for every day.
+Tasks are stored in the plugin's own data (`.obsidian/plugins/routine-timeline/data.json`), not in your notes. This keeps it simple and works on mobile. Moving a repeating task changes its time for every day it repeats.
 
 ## Limitations
 
-- Repeating tasks support **every day** only. There is no weekly or custom repeat yet
+- Repeats are every day or chosen weekdays. There is no monthly repeat, end date or per-day exception yet
+- In Week view a short bar is stretched to a readable minimum width, but it always starts at the task's start time. Bars late in the evening are cut at the end of the day column
 - Week, Bi-week, Month, Quarter, Year and 5 Years zooms are read-only, and dependency arrows are only drawn in Hours and Day
 - Board drag and drop uses the browser's drag events, so it works on desktop but not by touch (use the checkbox or the editor on mobile)
 - No ← → buttons for bars outside the visible area (the current-time line, dragging and resizing cover most of that)

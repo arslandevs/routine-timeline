@@ -52,6 +52,14 @@ var parseHHMM = (s) => {
 var hourLabel = (h) => `${h % 12 || 12} ${h < 12 ? "AM" : "PM"}`;
 var hourLabelShort = (h) => `${h % 12 || 12}${h < 12 ? "a" : "p"}`;
 var dayIndex = (d, start) => Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - start.getTime()) / 864e5);
+var DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+var DEFAULT_LEN = 25;
+var occurs = (t, d) => t.date === null ? !t.days || t.days.includes(d.getDay()) : t.date === ymd(d);
+var repeatLabel = (t) => t.date !== null ? "Once" : !t.days ? "Every day" : t.days.length === 7 ? "Every day" : [...t.days].sort((a, b) => a - b).map((n) => DOW[n]).join(", ");
+var cleanDays = (v) => {
+  const days = Array.isArray(v) ? [...new Set(v.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6))] : [];
+  return days.length > 0 && days.length < 7 ? days : null;
+};
 var parseYmd = (s) => {
   const [y, m, d] = s.split("-").map(Number);
   return new Date(y, m - 1, d);
@@ -67,7 +75,7 @@ var curve = (x1, y1, x2, y2) => {
 };
 var defaultUi = () => ({ groupBy: "none", hideDone: false, groups: [], layout: "timeline", zoom: "day" });
 function seedTasks() {
-  const mk = (title, start, end, group, color, deps = []) => ({ id: uid(), title, start, end, date: null, deps, group, color, doneDates: [] });
+  const mk = (title, start, end, group, color, deps = []) => ({ id: uid(), title, start, end, date: null, days: null, deps, group, color, doneDates: [] });
   const plan = mk("Morning plan", 7 * 60, 7 * 60 + 30, "Morning", "yellow");
   const deep = mk("Deep work", 9 * 60, 12 * 60, "Work", "blue", [plan.id]);
   return [
@@ -90,6 +98,7 @@ function normalize(raw) {
       start: (_c2 = t.start) != null ? _c2 : 540,
       end: (_d2 = t.end) != null ? _d2 : 600,
       date: (_e2 = t.date) != null ? _e2 : null,
+      days: cleanDays(t.days),
       deps: Array.isArray(t.deps) ? t.deps : t.after ? [t.after] : [],
       group: (_f = t.group) != null ? _f : "",
       color: COLORS.includes(t.color) ? t.color : "blue",
@@ -358,7 +367,7 @@ var TimelineBoard = class {
     const q = this.q.trim().toLowerCase();
     const ui = this.ui;
     const sp = this.sp;
-    const inRange = sp ? (t) => t.date === null || t.date >= sp.startStr && t.date < sp.endStr : (t) => t.date === null || t.date === dayStr;
+    const inRange = sp ? (t) => t.date === null || t.date >= sp.startStr && t.date < sp.endStr : (t) => occurs(t, this.day);
     this.visible = this.plugin.store.tasks.filter(inRange).filter((t) => !ui.hideDone || !this.isDone(t)).filter((t) => ui.groups.length === 0 || ui.groups.includes(groupLabel(t))).filter((t) => !q || t.title.toLowerCase().includes(q)).sort((a, b) => {
       const byDate = sp ? (a.date || "").localeCompare(b.date || "") : 0;
       return byDate || a.start - b.start || a.end - b.end;
@@ -482,7 +491,7 @@ var TimelineBoard = class {
       zb.onclick = (ev) => this.zoomMenu(ev);
     }
     if (!this.sp) {
-      const dayTasks = this.plugin.store.tasks.filter((t) => t.date === null || t.date === dayStr);
+      const dayTasks = this.plugin.store.tasks.filter((t) => occurs(t, this.day));
       const done = dayTasks.filter((t) => t.doneDates.includes(dayStr)).length;
       head.createDiv({ cls: "rt-count", text: `${done}/${dayTasks.length} done` });
     }
@@ -718,16 +727,41 @@ var TimelineBoard = class {
       this.updateNow();
     }
   }
+  // One row per task. Repeating tasks show only on the days they occur: at their
+  // time of day when the columns are wide (week, bi-week), as day marks otherwise.
   renderSpanTask(parent, t) {
     const sp = this.sp;
     const row = parent.createDiv("rt-row");
     row.style.height = `${ROW_H}px`;
-    let left = 0;
-    let width = sp.total;
+    const days = [];
     if (t.date !== null) {
-      left = dayIndex(parseYmd(t.date), sp.start) * sp.dayW;
-      width = Math.max(sp.dayW, 6);
+      const i = dayIndex(parseYmd(t.date), sp.start);
+      if (i >= 0 && i < sp.n) days.push(i);
+    } else {
+      const s = sp.start;
+      for (let i = 0; i < sp.n; i++) {
+        if (occurs(t, new Date(s.getFullYear(), s.getMonth(), s.getDate() + i))) days.push(i);
+      }
     }
+    const w = sp.dayW;
+    if (w >= 56) {
+      const minW = Math.min(w - 2, 56);
+      for (const i of days) {
+        const left = i * w + t.start / 1440 * w;
+        const width = Math.max(6, Math.min(Math.max((t.end - t.start) / 1440 * w, minW), (i + 1) * w - left - 1));
+        this.spanBar(row, t, left, width);
+      }
+    } else {
+      let k = 0;
+      while (k < days.length) {
+        let j = k;
+        while (j + 1 < days.length && days[j + 1] === days[j] + 1) j++;
+        this.spanBar(row, t, days[k] * w, Math.max(2, (days[j] - days[k] + 1) * w - 1));
+        k = j + 1;
+      }
+    }
+  }
+  spanBar(row, t, left, width) {
     const bar = row.createDiv({ cls: `rt-bar is-span rt-c-${t.color}` });
     bar.dataset.id = t.id;
     bar.toggleClass("is-done", this.isDone(t));
@@ -736,7 +770,7 @@ var TimelineBoard = class {
     bar.style.left = `${left}px`;
     bar.style.width = `${width}px`;
     bar.title = `${t.title || "Untitled"}
-${fmt(t.start)} – ${fmt(t.end)}${t.date === null ? " \xB7 every day" : ""}`;
+${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).toLowerCase()}` : ""}`;
     const inner = bar.createDiv("rt-bar-in");
     inner.createSpan({ cls: "rt-title", text: t.title || "Untitled" });
     if (t.date === null) (0, import_obsidian.setIcon)(inner.createSpan({ cls: "rt-repeat" }), "repeat");
@@ -779,7 +813,7 @@ ${fmt(t.start)} – ${fmt(t.end)}${t.date === null ? " \xB7 every day" : ""}`;
       tr.createEl("td", { text: fmt(t.start) });
       tr.createEl("td", { text: fmt(t.end) });
       tr.createEl("td", { text: t.group });
-      tr.createEl("td", { text: t.date === null ? "Every day" : "Once" });
+      tr.createEl("td", { text: repeatLabel(t) });
       tr.createEl("td", {
         text: t.deps.map((id) => (byId.get(id) || { title: "" }).title).filter(Boolean).join(", ")
       });
@@ -1103,13 +1137,13 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
   // ---- editing -----------------------------------------------------------------
   othersFor(t) {
     return this.plugin.store.tasks.filter(
-      (o) => o.id !== t.id && (o.date === null || o.date === this.dayStr)
+      (o) => o.id !== t.id && occurs(o, this.day)
     );
   }
   editTask(t) {
     new TaskModal(
       this.app(),
-      { ...t, doneDates: [...t.doneDates], deps: [...t.deps] },
+      { ...t, doneDates: [...t.doneDates], deps: [...t.deps], days: t.days ? [...t.days] : null },
       this.othersFor(t),
       this.plugin.groupNames(),
       this.dayStr,
@@ -1129,13 +1163,14 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
     const now = /* @__PURE__ */ new Date();
     const isToday = this.dayStr === ymd(now);
     const rounded = Math.ceil((now.getHours() * 60 + now.getMinutes()) / SNAP) * SNAP;
-    const start = clamp(isToday ? rounded : 9 * 60, 0, DAY - 60);
+    const start = clamp(isToday ? rounded : 9 * 60, 0, DAY - DEFAULT_LEN);
     const t = {
       id: uid(),
       title: "",
       start,
-      end: start + 60,
+      end: start + DEFAULT_LEN,
       date: this.dayStr,
+      days: null,
       deps: [],
       group: preset.group !== void 0 ? preset.group : this.ui.groups.length === 1 && this.ui.groups[0] !== "No group" ? this.ui.groups[0] : "",
       color: "blue",
@@ -1175,18 +1210,28 @@ var TaskModal = class extends import_obsidian.Modal {
     const d = this.draft;
     contentEl.createEl("h3", { text: this.isNew ? "New task" : "Edit task" });
     new import_obsidian.Setting(contentEl).setName("Title").addText((t) => t.setValue(d.title).onChange((v) => d.title = v));
+    let endInput = null;
+    let endTouched = !this.isNew;
     new import_obsidian.Setting(contentEl).setName("Start").addText((t) => {
       t.inputEl.type = "time";
       t.setValue(hhmm(d.start)).onChange((v) => {
         const m = parseHHMM(v);
-        if (m !== null) d.start = m;
+        if (m === null) return;
+        d.start = m;
+        if (!endTouched) {
+          d.end = Math.min(DAY - 1, m + DEFAULT_LEN);
+          if (endInput) endInput.value = hhmm(d.end);
+        }
       });
     });
-    new import_obsidian.Setting(contentEl).setName("End").addText((t) => {
+    new import_obsidian.Setting(contentEl).setName("End").setDesc(this.isNew ? `Defaults to ${DEFAULT_LEN} minutes after the start.` : "").addText((t) => {
+      endInput = t.inputEl;
       t.inputEl.type = "time";
       t.setValue(hhmm(d.end >= DAY ? DAY - 1 : d.end)).onChange((v) => {
         const m = parseHHMM(v);
-        if (m !== null) d.end = m;
+        if (m === null) return;
+        d.end = m;
+        endTouched = true;
       });
     });
     const listId = "rt-groups-list";
@@ -1207,7 +1252,41 @@ var TaskModal = class extends import_obsidian.Modal {
         b.addClass("is-on");
       };
     }
-    new import_obsidian.Setting(contentEl).setName("Repeat every day").setDesc("Daily routines keep one time slot; ticking them off is tracked per day.").addToggle((t) => t.setValue(d.date === null).onChange((v) => d.date = v ? null : this.dayStr));
+    const mode = () => d.date !== null ? "none" : d.days ? "weekly" : "daily";
+    const dayRow = contentEl.createDiv("rt-days");
+    const drawDays = () => {
+      dayRow.empty();
+      dayRow.toggleClass("is-hidden", mode() !== "weekly");
+      DOW.forEach((name, n) => {
+        const b = dayRow.createEl("button", { cls: "rt-day", text: name });
+        b.toggleClass("is-on", !!d.days && d.days.includes(n));
+        b.onclick = () => {
+          const cur = d.days || [];
+          d.days = cur.includes(n) ? cur.filter((x) => x !== n) : [...cur, n];
+          drawDays();
+        };
+      });
+    };
+    new import_obsidian.Setting(contentEl).setName("Repeat").setDesc("Repeating tasks keep one time slot. Ticking them off is tracked per day.").addDropdown((dd) => {
+      dd.addOption("none", "Does not repeat");
+      dd.addOption("daily", "Every day");
+      dd.addOption("weekly", "On specific days of the week");
+      dd.setValue(mode()).onChange((v) => {
+        if (v === "none") {
+          d.date = this.dayStr;
+          d.days = null;
+        } else if (v === "daily") {
+          d.date = null;
+          d.days = null;
+        } else {
+          d.date = null;
+          if (!d.days) d.days = [parseYmd(this.dayStr).getDay()];
+        }
+        drawDays();
+      });
+    });
+    contentEl.appendChild(dayRow);
+    drawDays();
     const chips = contentEl.createDiv("rt-chips");
     const drawChips = () => {
       chips.empty();
@@ -1241,6 +1320,11 @@ var TaskModal = class extends import_obsidian.Modal {
           new import_obsidian.Notice("End time must be after start time.");
           return;
         }
+        if (d.date === null && d.days && d.days.length === 0) {
+          new import_obsidian.Notice("Pick at least one day of the week.");
+          return;
+        }
+        if (d.days && d.days.length === 7) d.days = null;
         this.close();
         await this.onDone(d);
       })

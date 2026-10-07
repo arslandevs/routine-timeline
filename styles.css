@@ -679,3 +679,28 @@
 .rt-col-new {
 	align-self: flex-start;
 }
+
+/* Weekday picker in the task editor */
+.rt-days {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-bottom: 12px;
+}
+.rt-days.is-hidden {
+	display: none;
+}
+.rt-day {
+	height: 28px;
+	padding: 0 10px;
+	border-radius: 999px;
+	background: transparent;
+	box-shadow: none;
+	border: 1px solid var(--background-modifier-border);
+	color: var(--text-muted);
+}
+.rt-day.is-on {
+	background: var(--interactive-accent);
+	border-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
