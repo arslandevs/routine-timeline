@@ -1159,6 +1159,12 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
       }
     ).open();
   }
+  // New tasks join the view's group filter so they don't vanish right after being added.
+  defaultGroup() {
+    const g = this.ui.groups;
+    if (g.length === 0 || g.includes("No group")) return "";
+    return g[0];
+  }
   addTask(preset = {}) {
     const now = /* @__PURE__ */ new Date();
     const isToday = this.dayStr === ymd(now);
@@ -1172,7 +1178,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
       date: this.dayStr,
       days: null,
       deps: [],
-      group: preset.group !== void 0 ? preset.group : this.ui.groups.length === 1 && this.ui.groups[0] !== "No group" ? this.ui.groups[0] : "",
+      group: preset.group !== void 0 ? preset.group : this.defaultGroup(),
       color: "blue",
       doneDates: []
     };
@@ -1188,6 +1194,10 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
         if (!draft.title.trim()) draft.title = "Untitled";
         this.plugin.store.tasks.push(draft);
         await this.plugin.save();
+        const g = this.ui.groups;
+        if (g.length > 0 && !g.includes(groupLabel(draft))) {
+          new import_obsidian.Notice(`Added "${draft.title}", but this view only shows: ${g.join(", ")}. Its group is "${groupLabel(draft)}".`);
+        }
       }
     ).open();
   }
