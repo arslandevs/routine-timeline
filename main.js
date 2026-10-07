@@ -56,6 +56,30 @@ var DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 var DEFAULT_LEN = 25;
 var occurs = (t, d) => t.date === null ? !t.days || t.days.includes(d.getDay()) : t.date === ymd(d);
 var repeatLabel = (t) => t.date !== null ? "Once" : !t.days ? "Every day" : t.days.length === 7 ? "Every day" : [...t.days].sort((a, b) => a - b).map((n) => DOW[n]).join(", ");
+var defaultStatuses = () => [
+  { id: "not-started", name: "Not started", done: false },
+  { id: "in-progress", name: "In progress", done: false },
+  { id: "done", name: "Done", done: true }
+];
+var cleanStatuses = (v) => {
+  const seen = /* @__PURE__ */ new Set();
+  const list = Array.isArray(v) ? v.filter((s) => s && typeof s.id === "string" && typeof s.name === "string" && s.name.trim() && !seen.has(s.id) && seen.add(s.id)).map((s) => ({ id: s.id, name: s.name.trim(), done: !!s.done })) : [];
+  if (list.length === 0) return defaultStatuses();
+  if (!list.some((s) => s.done)) list[list.length - 1].done = true;
+  return list;
+};
+var doneStatus = (sts) => sts.find((s) => s.done) || sts[sts.length - 1];
+var statusOf = (t, date, sts) => {
+  const id = t.st && t.st[date];
+  const hit = id ? sts.find((s) => s.id === id) : null;
+  if (hit) return hit;
+  return t.doneDates.includes(date) ? doneStatus(sts) : sts[0];
+};
+var withStatus = (t, date, status, sts) => {
+  t.st = { ...t.st || {}, [date]: status.id };
+  const done = status.done;
+  t.doneDates = done ? t.doneDates.includes(date) ? t.doneDates : [...t.doneDates, date] : t.doneDates.filter((d) => d !== date);
+};
 var cleanDays = (v) => {
   const days = Array.isArray(v) ? [...new Set(v.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6))] : [];
   return days.length > 0 && days.length < 7 ? days : null;
@@ -75,7 +99,7 @@ var curve = (x1, y1, x2, y2) => {
 };
 var defaultUi = () => ({ groupBy: "none", hideDone: false, groups: [], layout: "timeline", zoom: "day" });
 function seedTasks() {
-  const mk = (title, start, end, group, color, deps = []) => ({ id: uid(), title, start, end, date: null, days: null, deps, group, color, doneDates: [] });
+  const mk = (title, start, end, group, color, deps = []) => ({ id: uid(), title, start, end, date: null, days: null, deps, group, color, doneDates: [], st: {} });
   const plan = mk("Morning plan", 7 * 60, 7 * 60 + 30, "Morning", "yellow");
   const deep = mk("Deep work", 9 * 60, 12 * 60, "Work", "blue", [plan.id]);
   return [
@@ -102,7 +126,8 @@ function normalize(raw) {
       deps: Array.isArray(t.deps) ? t.deps : t.after ? [t.after] : [],
       group: (_f = t.group) != null ? _f : "",
       color: COLORS.includes(t.color) ? t.color : "blue",
-      doneDates: Array.isArray(t.doneDates) ? t.doneDates : []
+      doneDates: Array.isArray(t.doneDates) ? t.doneDates : [],
+      st: t.st && typeof t.st === "object" && !Array.isArray(t.st) ? { ...t.st } : {}
     };
   });
   const ui = {
@@ -112,7 +137,7 @@ function normalize(raw) {
     layout: s.ui && LAYOUTS.includes(s.ui.layout) ? s.ui.layout : "timeline",
     zoom: s.ui && ZOOMS.includes(s.ui.zoom) ? s.ui.zoom : "day"
   };
-  return { tasks, ui };
+  return { tasks, ui, statuses: cleanStatuses(s.statuses) };
 }
 function parseOpts(src) {
   const o = { height: 420, groupBy: "none", hideDone: false, groups: [], layout: "timeline", zoom: "day" };
@@ -136,7 +161,7 @@ function parseOpts(src) {
 var RoutineTimelinePlugin = class extends import_obsidian.Plugin {
   constructor() {
     super(...arguments);
-    this.store = { tasks: [], ui: defaultUi() };
+    this.store = { tasks: [], ui: defaultUi(), statuses: defaultStatuses() };
     this.boards = /* @__PURE__ */ new Set();
   }
   async onload() {
@@ -144,7 +169,7 @@ var RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     if (loaded) {
       this.store = loaded;
     } else {
-      this.store = { tasks: seedTasks(), ui: defaultUi() };
+      this.store = { tasks: seedTasks(), ui: defaultUi(), statuses: defaultStatuses() };
       await this.saveData(this.store);
     }
     this.registerView(VIEW_TYPE, (leaf) => new TimelineView(leaf, this));
@@ -260,6 +285,7 @@ var TimelineBoard = class {
     this.sp = null;
     this.lastW = 0;
     this.offPanel = null;
+    this.renameId = null;
     this.resizeTimer = 0;
     this.timer = window.setInterval(() => this.updateNow(), 6e4);
     if (opts.embedded) host.addEventListener("mousedown", (e) => e.stopPropagation());
@@ -352,12 +378,18 @@ var TimelineBoard = class {
     else label = `${start.getFullYear()} – ${last.getFullYear()}`;
     return { start, n, dayW, total: n * dayW, cells, label, startStr: ymd(start), endStr: ymd(end) };
   }
+  statusKey(t) {
+    return t.date !== null ? t.date : this.sp ? ymd(/* @__PURE__ */ new Date()) : this.dayStr;
+  }
   isDone(t) {
-    const key = t.date !== null ? t.date : this.sp ? ymd(/* @__PURE__ */ new Date()) : this.dayStr;
-    return t.doneDates.includes(key);
+    return t.doneDates.includes(this.statusKey(t));
+  }
+  statusOf(t) {
+    return statusOf(t, this.statusKey(t), this.plugin.store.statuses);
   }
   async toggleDone(t, on) {
-    t.doneDates = on ? [...t.doneDates, this.dayStr] : t.doneDates.filter((d) => d !== this.dayStr);
+    const sts = this.plugin.store.statuses;
+    withStatus(t, this.dayStr, on ? doneStatus(sts) : sts[0], sts);
     await this.plugin.save();
   }
   // ---- data for the current day -------------------------------------------------
@@ -383,7 +415,8 @@ var TimelineBoard = class {
     if (ui.groupBy === "none") {
       this.visible.forEach(pushTask);
     } else {
-      const keyOf = (t) => ui.groupBy === "group" ? groupLabel(t) : this.isDone(t) ? "Done" : "To do";
+      const sts = this.plugin.store.statuses;
+      const keyOf = (t) => ui.groupBy === "group" ? groupLabel(t) : this.statusOf(t).name;
       const buckets = /* @__PURE__ */ new Map();
       for (const t of this.visible) {
         const k = keyOf(t);
@@ -391,7 +424,7 @@ var TimelineBoard = class {
         if (list) list.push(t);
         else buckets.set(k, [t]);
       }
-      const order = (k) => ui.groupBy === "status" ? k === "To do" ? 0 : 1 : k === "No group" ? 1 : 0;
+      const order = (k) => ui.groupBy === "status" ? sts.findIndex((s) => s.name === k) : k === "No group" ? 1 : 0;
       const keys = [...buckets.keys()].sort((a, b) => order(a) - order(b) || a.localeCompare(b));
       for (const k of keys) {
         const list = (_a = buckets.get(k)) != null ? _a : [];
@@ -509,7 +542,7 @@ var TimelineBoard = class {
     const filterOn = ui.hideDone || ui.groups.length > 0;
     this.tool(head, "list-filter", "Filter", filterOn).onclick = (ev) => this.filterMenu(ev);
     const groupName = { none: "Group", group: "By group", status: "By status" }[ui.groupBy];
-    this.tool(head, "layout-list", groupName, ui.groupBy !== "none").onclick = (ev) => this.groupMenu(ev);
+    if (ui.layout !== "board") this.tool(head, "layout-list", groupName, ui.groupBy !== "none").onclick = (ev) => this.groupMenu(ev);
     const settings = head.createEl("button", { cls: "clickable-icon", attr: { "aria-label": "View settings" } });
     (0, import_obsidian.setIcon)(settings, "sliders-horizontal");
     settings.onclick = (ev) => {
@@ -781,13 +814,13 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     const body = host.createDiv("rt-body");
     const tbl = body.createEl("table", { cls: "rt-table" });
     const hr = tbl.createEl("thead").createEl("tr");
-    for (const h of ["", "Name", "Start", "End", "Group", "Repeat", "Comes after"]) hr.createEl("th", { text: h });
+    for (const h of ["", "Name", "Status", "Start", "End", "Group", "Repeat", "Comes after"]) hr.createEl("th", { text: h });
     const tb = tbl.createEl("tbody");
     const byId = new Map(this.plugin.store.tasks.map((t) => [t.id, t]));
     for (const item of this.layout) {
       if (item.kind === "head") {
         const tr2 = tb.createEl("tr", { cls: "rt-trhead" });
-        const td = tr2.createEl("td", { attr: { colspan: "7" } });
+        const td = tr2.createEl("td", { attr: { colspan: "8" } });
         const closed = this.collapsed.has(item.key);
         (0, import_obsidian.setIcon)(td.createSpan({ cls: "rt-chev" }), closed ? "chevron-right" : "chevron-down");
         td.createSpan({ text: item.label });
@@ -810,6 +843,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       const name = tr.createEl("td", { cls: "rt-td-name" });
       name.createSpan({ cls: `rt-dot rt-c-${t.color}` });
       name.createSpan({ text: t.title || "Untitled" });
+      tr.createEl("td", { text: this.statusOf(t).name });
       tr.createEl("td", { text: fmt(t.start) });
       tr.createEl("td", { text: fmt(t.end) });
       tr.createEl("td", { text: t.group });
@@ -820,35 +854,28 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       tr.onclick = () => this.editTask(t);
     }
     if (this.layout.length === 0) {
-      tb.createEl("tr").createEl("td", { cls: "rt-empty-cell", text: "No tasks match. Use New to add one.", attr: { colspan: "7" } });
+      tb.createEl("tr").createEl("td", { cls: "rt-empty-cell", text: "No tasks match. Use New to add one.", attr: { colspan: "8" } });
     }
-    const add = tb.createEl("tr", { cls: "rt-trnew" }).createEl("td", { attr: { colspan: "7" } });
+    const add = tb.createEl("tr", { cls: "rt-trnew" }).createEl("td", { attr: { colspan: "8" } });
     const addBtn = add.createEl("button", { cls: "rt-new-btn" });
     (0, import_obsidian.setIcon)(addBtn.createSpan(), "plus");
     addBtn.createSpan({ text: "New" });
     addBtn.onclick = () => this.addTask();
   }
-  // ---- board layout: columns by status (default) or by group --------------------
+  // ---- board layout: one column per status (Not started / In progress / Done by default)
   renderBoard(host) {
     const body = host.createDiv("rt-body");
     const board = body.createDiv("rt-board");
-    const byGroup = this.ui.groupBy === "group";
-    let cols;
-    if (byGroup) {
-      const picked = this.ui.groups;
-      const names = picked.length ? picked.filter((g) => g !== "No group") : this.plugin.groupNames();
-      cols = names.map((n) => ({ key: n, label: n }));
-      if (!picked.length || picked.includes("No group")) cols.push({ key: "No group", label: "No group" });
-    } else {
-      cols = [{ key: "To do", label: "To do" }, { key: "Done", label: "Done" }];
-    }
-    const keyOf = (t) => byGroup ? groupLabel(t) : this.isDone(t) ? "Done" : "To do";
-    for (const c of cols) {
+    const sts = this.plugin.store.statuses;
+    for (const st of sts) {
       const col = board.createDiv("rt-col");
-      const items = this.visible.filter((t) => keyOf(t) === c.key);
+      const items = this.visible.filter((t) => this.statusOf(t).id === st.id);
       const head = col.createDiv("rt-col-head");
-      head.createSpan({ text: c.label });
+      this.renderColTitle(head, st);
       head.createSpan({ cls: "rt-gcount", text: String(items.length) });
+      const more = head.createEl("button", { cls: "clickable-icon rt-col-more", attr: { "aria-label": "Column options" } });
+      (0, import_obsidian.setIcon)(more, "more-horizontal");
+      more.onclick = (ev) => this.columnMenu(ev, st);
       const list = col.createDiv("rt-col-list");
       col.addEventListener("dragover", (e) => {
         e.preventDefault();
@@ -862,7 +889,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
         col.removeClass("is-over");
         const id = e.dataTransfer ? e.dataTransfer.getData("text/plain") : "";
         const t = this.plugin.store.tasks.find((x) => x.id === id);
-        if (t) void this.moveToColumn(t, c.key, byGroup);
+        if (t) void this.moveToColumn(t, st);
       });
       for (const t of items) {
         const card = list.createDiv({ cls: `rt-card rt-c-${t.color}` });
@@ -879,25 +906,80 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
         top.createSpan({ cls: "rt-title", text: t.title || "Untitled" });
         if (t.date === null) (0, import_obsidian.setIcon)(top.createSpan({ cls: "rt-repeat" }), "repeat");
         const meta = card.createDiv("rt-card-meta");
-        meta.createSpan({ text: `${fmt(t.start)} – ${fmt(t.end)}` });
-        if (t.group && !byGroup) meta.createSpan({ cls: "rt-chip-sm", text: t.group });
+        meta.createSpan({ text: `${fmt(t.start)} \u2013 ${fmt(t.end)}` });
+        if (t.group) meta.createSpan({ cls: "rt-chip-sm", text: t.group });
         card.onclick = () => this.editTask(t);
       }
+      if (items.length === 0) list.createDiv({ cls: "rt-col-empty", text: "No tasks" });
       const addBtn = col.createEl("button", { cls: "rt-new-btn rt-col-new" });
       (0, import_obsidian.setIcon)(addBtn.createSpan(), "plus");
       addBtn.createSpan({ text: "New" });
-      addBtn.onclick = () => this.addTask(byGroup && c.key !== "No group" ? { group: c.key } : {});
+      addBtn.onclick = () => this.addTask({ status: st });
     }
+    const addCol = board.createEl("button", { cls: "rt-new-btn rt-col-add" });
+    (0, import_obsidian.setIcon)(addCol.createSpan(), "plus");
+    addCol.createSpan({ text: "Add column" });
+    addCol.onclick = async () => {
+      const st = { id: uid(), name: "New column", done: false };
+      sts.push(st);
+      this.renameId = st.id;
+      await this.plugin.save();
+    };
   }
-  async moveToColumn(t, key, byGroup) {
-    if (byGroup) {
-      t.group = key === "No group" ? "" : key;
-    } else {
-      const wantDone = key === "Done";
-      const isDone = this.isDone(t);
-      if (wantDone === isDone) return;
-      t.doneDates = wantDone ? [...t.doneDates, this.dayStr] : t.doneDates.filter((d) => d !== this.dayStr);
+  // Column title; click it to rename. Enter or clicking away saves, Escape cancels.
+  renderColTitle(head, st) {
+    if (this.renameId !== st.id) {
+      const title = head.createSpan({ cls: "rt-col-title", text: st.name });
+      title.onclick = () => {
+        this.renameId = st.id;
+        this.render();
+      };
+      return;
     }
+    const inp = head.createEl("input", { cls: "rt-col-input", type: "text" });
+    inp.value = st.name;
+    let finished = false;
+    const finish = async (save) => {
+      if (finished) return;
+      finished = true;
+      this.renameId = null;
+      const v = inp.value.trim();
+      if (save && v && v !== st.name) {
+        st.name = v;
+        await this.plugin.save();
+      } else this.render();
+    };
+    inp.onkeydown = (e) => {
+      if (e.key === "Enter") void finish(true);
+      else if (e.key === "Escape") void finish(false);
+    };
+    inp.onblur = () => void finish(true);
+    window.requestAnimationFrame(() => {
+      inp.focus();
+      inp.select();
+    });
+  }
+  columnMenu(ev, st) {
+    const sts = this.plugin.store.statuses;
+    const menu = new import_obsidian.Menu();
+    menu.addItem(
+      (i) => i.setTitle("Rename").setIcon("pencil").onClick(() => {
+        this.renameId = st.id;
+        this.render();
+      })
+    );
+    menu.addItem(
+      (i) => i.setTitle(st.done ? "Delete (the Done column stays)" : "Delete column").setIcon("trash").setDisabled(st.done || sts.length <= 1).onClick(async () => {
+        const at = sts.findIndex((s) => s.id === st.id);
+        if (at >= 0) sts.splice(at, 1);
+        await this.plugin.save();
+      })
+    );
+    menu.showAtMouseEvent(ev);
+  }
+  async moveToColumn(t, status) {
+    if (this.statusOf(t).id === status.id) return;
+    withStatus(t, this.dayStr, status, this.plugin.store.statuses);
     await this.plugin.save();
   }
   shift(n) {
@@ -1143,7 +1225,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
   editTask(t) {
     new TaskModal(
       this.app(),
-      { ...t, doneDates: [...t.doneDates], deps: [...t.deps], days: t.days ? [...t.days] : null },
+      { ...t, doneDates: [...t.doneDates], deps: [...t.deps], days: t.days ? [...t.days] : null, st: { ...t.st } },
       this.othersFor(t),
       this.plugin.groupNames(),
       this.dayStr,
@@ -1156,7 +1238,8 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
           for (const o of this.plugin.store.tasks) o.deps = o.deps.filter((d) => d !== t.id);
         }
         await this.plugin.save();
-      }
+      },
+      this.plugin.store.statuses
     ).open();
   }
   // New tasks join the view's group filter so they don't vanish right after being added.
@@ -1180,8 +1263,10 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
       deps: [],
       group: preset.group !== void 0 ? preset.group : this.defaultGroup(),
       color: "blue",
-      doneDates: []
+      doneDates: [],
+      st: {}
     };
+    if (preset.status) withStatus(t, this.dayStr, preset.status, this.plugin.store.statuses);
     new TaskModal(
       this.app(),
       t,
@@ -1198,7 +1283,8 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
         if (g.length > 0 && !g.includes(groupLabel(draft))) {
           new import_obsidian.Notice(`Added "${draft.title}", but this view only shows: ${g.join(", ")}. Its group is "${groupLabel(draft)}".`);
         }
-      }
+      },
+      this.plugin.store.statuses
     ).open();
   }
   app() {
@@ -1206,7 +1292,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
   }
 };
 var TaskModal = class extends import_obsidian.Modal {
-  constructor(app, draft, others, groups, dayStr, isNew, onDone) {
+  constructor(app, draft, others, groups, dayStr, isNew, onDone, statuses) {
     super(app);
     this.draft = draft;
     this.others = others;
@@ -1214,6 +1300,7 @@ var TaskModal = class extends import_obsidian.Modal {
     this.dayStr = dayStr;
     this.isNew = isNew;
     this.onDone = onDone;
+    this.statuses = statuses;
   }
   onOpen() {
     const { contentEl } = this;
@@ -1297,6 +1384,15 @@ var TaskModal = class extends import_obsidian.Modal {
     });
     contentEl.appendChild(dayRow);
     drawDays();
+    if (this.statuses && this.statuses.length) {
+      new import_obsidian.Setting(contentEl).setName("Status").setDesc(`For ${this.dayStr}.`).addDropdown((dd) => {
+        for (const s of this.statuses) dd.addOption(s.id, s.name);
+        dd.setValue(statusOf(d, this.dayStr, this.statuses).id).onChange((v) => {
+          const s = this.statuses.find((x) => x.id === v);
+          if (s) withStatus(d, this.dayStr, s, this.statuses);
+        });
+      });
+    }
     const chips = contentEl.createDiv("rt-chips");
     const drawChips = () => {
       chips.empty();

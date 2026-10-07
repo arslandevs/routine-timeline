@@ -704,3 +704,41 @@
 	border-color: var(--interactive-accent);
 	color: var(--text-on-accent);
 }
+
+/* Board columns: rename, options, add */
+.rt-col-title {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	cursor: text;
+}
+.rt-col-title:hover {
+	background: var(--background-modifier-hover);
+	border-radius: 4px;
+}
+.rt-col-input {
+	flex: 1;
+	min-width: 0;
+	height: 24px;
+	padding: 0 6px;
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+}
+.rt-col-more {
+	margin-left: auto;
+}
+.rt-col-title + .rt-gcount {
+	margin-left: 0;
+}
+.rt-col-empty {
+	padding: 6px 4px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+}
+.rt-col-add {
+	flex: 0 0 auto;
+	align-self: flex-start;
+	margin-top: 4px;
+}
