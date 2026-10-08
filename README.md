@@ -2,7 +2,7 @@
 
 A Notion-style timeline for your daily routine, inside Obsidian: colored task bars on an hour axis, groups and filters, drag-to-connect dependency arrows, and an inline block you can embed in any note.
 
-> **Status: early release (v0.9.1).** It renders correctly in a headless DOM smoke test across every layout and zoom, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
+> **Status: early release (v0.10.0).** It renders correctly in a headless DOM smoke test across every layout and zoom, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
 
 ## Install
 
@@ -17,9 +17,9 @@ Requires Obsidian 1.4.0 or newer. Works on desktop and mobile.
 
 ## Features
 
-- **View tabs** across the top, like Notion: *Default view | Timeline | … | +*. Click a tab to switch, **+** to add a Table, Board, Timeline or Calendar view, double-click a tab to rename it, right-click for Rename, Duplicate and Delete. Each view keeps its own layout, zoom, filters and grouping. **View settings → Layout** changes the layout of the current view
+- **View tabs** across the top, like Notion (also inside a note: click a tab to use that view's settings in the block). Click the active tab for its menu: Rename, Display as (Table, Board, Timeline, Calendar), Edit view, Duplicate view, Delete view. Also: *Default view | Timeline | … | +*. Click a tab to switch, **+** to add a Table, Board, Timeline or Calendar view, double-click a tab to rename it, right-click for Rename, Duplicate and Delete. Each view keeps its own layout, zoom, filters and grouping. **View settings → Layout** changes the layout of the current view
 - **Four layouts**: Table, Board, Timeline and Calendar. Same tasks, same filters, different view
-  - **Table**: one row per task. Click a row to edit it. Hover a row (or select any) to show its checkbox
+  - **Table**: edit like a spreadsheet. Click a cell to select it, then just **type** to replace its value (or press **Enter** or double-click to edit), **Enter** saves, **Esc** cancels, arrow keys move between cells. Status is a chip you click. Hover a row's name to show **OPEN**, which opens the task in a side panel with all its fields and a **Notes** box. Hover a row (or select any) to show its checkbox
     - **Selecting**: tick one or more rows, or the header box for all. A floating bar shows **N selected**, a trash icon, a **⋯** menu and a clear button, like Notion. Right-click a row for the same menu
     - **⋯ menu**: *Mark as* any status, *Edit group & color* for all selected, *Duplicate*, and *Delete*. Delete asks you to confirm and removes any arrows pointing at the deleted tasks
     - **Status**: click a status chip in a row to change it

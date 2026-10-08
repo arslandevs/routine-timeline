@@ -199,7 +199,7 @@ var defaultStore = (tasks) => {
   return { tasks, views: [v], activeView: v.id, statuses: defaultStatuses(), props: defaultProps(), propOrder: [...PROP_KEYS], feeds: [] };
 };
 function seedTasks() {
-  const mk = (title, start, end, group, color, deps = []) => ({ id: uid(), title, start, end, date: null, days: null, from: null, until: null, count: null, custom: {}, deps, group, color, doneDates: [], st: {} });
+  const mk = (title, start, end, group, color, deps = []) => ({ id: uid(), title, start, end, date: null, days: null, from: null, until: null, count: null, custom: {}, notes: "", deps, group, color, doneDates: [], st: {} });
   const plan = mk("Morning plan", 7 * 60, 7 * 60 + 30, "Morning", "yellow");
   const deep = mk("Deep work", 9 * 60, 12 * 60, "Work", "blue", [plan.id]);
   return [
@@ -227,6 +227,7 @@ function normalize(raw) {
       until: typeof t.until === "string" && /^\d{4}-\d{2}-\d{2}$/.test(t.until) ? t.until : null,
       count: Number.isInteger(t.count) && t.count > 0 ? t.count : null,
       custom: t.custom && typeof t.custom === "object" && !Array.isArray(t.custom) ? { ...t.custom } : {},
+      notes: typeof t.notes === "string" ? t.notes : "",
       deps: Array.isArray(t.deps) ? t.deps : t.after ? [t.after] : [],
       group: (_f = t.group) != null ? _f : "",
       color: COLORS.includes(t.color) ? t.color : "blue",
@@ -567,6 +568,7 @@ var RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     const v = cleanView({ layout, name: this.uniqueViewName(LAYOUT_LABEL[layout]) });
     this.store.views.push(v);
     await this.setActiveView(v.id);
+    return v;
   }
   async duplicateView(id) {
     const src = this.store.views.find((v) => v.id === id);
@@ -579,6 +581,7 @@ var RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     if (this.store.views.length <= 1) return;
     this.store.views = this.store.views.filter((v) => v.id !== id);
     if (this.store.activeView === id) this.store.activeView = this.store.views[0].id;
+    for (const b of this.boards) if (b.embedViewId === id) b.embedViewId = null;
     await this.save();
   }
   async renameView(id, name) {
@@ -701,6 +704,7 @@ var BoardChild = class extends import_obsidian.MarkdownRenderChild {
       { embedded: true, height: this.o.height },
       ui
     );
+    this.board.embedViewId = ui.id || null;
     this.plugin.boards.add(this.board);
     this.board.render();
   }
@@ -740,6 +744,11 @@ var TimelineBoard = class {
     this.offPanel = null;
     this.renameId = null;
     this.renameViewId = null;
+    this.embedViewId = null;
+    this.peekId = null;
+    this.peekDraft = null;
+    this.selCell = null;
+    this.restoreCellFocus = false;
     this.calTop = null;
     this.calLeft = 0;
     this.calNow = null;
@@ -903,6 +912,8 @@ var TimelineBoard = class {
     const search = host.querySelector(".rt-search");
     const refocus = !!search && document.activeElement === search;
     const caret = (_a = search == null ? void 0 : search.selectionStart) != null ? _a : 0;
+    const ae = document.activeElement;
+    this.restoreCellFocus = !!(ae && host.contains(ae) && ae.closest && ae.closest("td[data-col]"));
     const calScroll = host.querySelector(".rt-cal-scroll");
     if (calScroll) {
       this.calTop = calScroll.scrollTop;
@@ -925,7 +936,7 @@ var TimelineBoard = class {
     this.sp = this.isSpan() ? this.spanInfo() : null;
     this.hw = this.ui.zoom === "hours" ? HOURS_W : Math.max(MIN_HOUR_W, Math.floor(this.availWidth() / 24));
     this.compute();
-    if (!this.opts.embedded) this.renderTabs(host);
+    this.renderTabs(host);
     this.renderToolbar(host);
     if (this.reopenPanel) {
       this.reopenPanel = false;
@@ -937,6 +948,7 @@ var TimelineBoard = class {
     else if (layout === "calendar") this.renderCalendar(host);
     else if (this.sp) this.renderSpan(host);
     else this.renderCanvas(host);
+    if (this.peekId) this.renderPeek(host);
     const s = host.querySelector(".rt-search");
     if (refocus && s) {
       s.focus();
@@ -1054,10 +1066,11 @@ var TimelineBoard = class {
   // The view tabs (Default view | Timeline | + ), like Notion's.
   renderTabs(host) {
     const store = this.plugin.store;
+    const activeId = this.opts.embedded ? this.embedViewId : store.activeView;
     const bar = host.createDiv("rt-tabs");
     for (const v of store.views) {
       const tab = bar.createDiv("rt-tab");
-      tab.toggleClass("is-active", v.id === store.activeView);
+      tab.toggleClass("is-active", v.id === activeId);
       (0, import_obsidian.setIcon)(tab.createSpan({ cls: "rt-tab-icon" }), LAYOUT_ICON[v.layout]);
       if (this.renameViewId === v.id) {
         const inp = tab.createEl("input", { type: "text", cls: "rt-tab-input" });
@@ -1084,9 +1097,11 @@ var TimelineBoard = class {
       } else {
         tab.createSpan({ cls: "rt-tab-name", text: v.name });
       }
-      tab.onclick = () => {
-        if (this.renameViewId || v.id === store.activeView) return;
-        void this.plugin.setActiveView(v.id);
+      tab.onclick = (e) => {
+        if (this.renameViewId) return;
+        if (v.id === activeId) this.viewMenu(e, v, true);
+        else if (this.opts.embedded) this.adoptView(v);
+        else void this.plugin.setActiveView(v.id);
       };
       tab.ondblclick = () => {
         this.renameViewId = v.id;
@@ -1094,7 +1109,7 @@ var TimelineBoard = class {
       };
       tab.oncontextmenu = (e) => {
         e.preventDefault();
-        this.viewMenu(e, v);
+        this.viewMenu(e, v, v.id === activeId);
       };
     }
     const add = bar.createEl("button", { cls: "clickable-icon rt-tab-add", attr: { "aria-label": "Add a view" } });
@@ -1102,19 +1117,50 @@ var TimelineBoard = class {
     add.onclick = (ev) => {
       const menu = new import_obsidian.Menu();
       for (const l of LAYOUTS) {
-        menu.addItem((i) => i.setTitle(LAYOUT_LABEL[l]).setIcon(LAYOUT_ICON[l]).onClick(() => void this.plugin.addView(l)));
+        menu.addItem(
+          (i) => i.setTitle(LAYOUT_LABEL[l]).setIcon(LAYOUT_ICON[l]).onClick(async () => {
+            const nv = await this.plugin.addView(l);
+            if (this.opts.embedded && nv) this.adoptView(nv);
+          })
+        );
       }
       menu.showAtMouseEvent(ev);
     };
   }
-  viewMenu(ev, v) {
+  // Inside a note, a tab copies that saved view's settings into this block.
+  adoptView(v) {
+    this.ui = { ...v, groups: [...v.groups] };
+    this.embedViewId = v.id;
+    this.initialScroll = true;
+    this.calTop = null;
+    this.render();
+  }
+  // Like Notion's tab menu: rename, display as, edit view, duplicate, delete.
+  viewMenu(ev, v, active) {
     const menu = new import_obsidian.Menu();
     menu.addItem((i) => i.setTitle("Rename").setIcon("pencil").onClick(() => {
       this.renameViewId = v.id;
       this.render();
     }));
-    menu.addItem((i) => i.setTitle("Duplicate").setIcon("copy").onClick(() => void this.plugin.duplicateView(v.id)));
-    menu.addSeparator();
+    if (active) {
+      menu.addSeparator();
+      menu.addItem((i) => i.setTitle("Display as").setDisabled(true));
+      for (const l of LAYOUTS) {
+        menu.addItem(
+          (i) => i.setTitle(LAYOUT_LABEL[l]).setIcon(LAYOUT_ICON[l]).setChecked(this.ui.layout === l).onClick(() => {
+            this.ui.layout = l;
+            this.initialScroll = true;
+            this.uiChanged();
+          })
+        );
+      }
+      menu.addItem((i) => i.setTitle("Edit view").setIcon("sliders-horizontal").onClick(() => {
+        this.reopenPanel = true;
+        this.render();
+      }));
+      menu.addSeparator();
+    }
+    menu.addItem((i) => i.setTitle("Duplicate view").setIcon("copy").onClick(() => void this.plugin.duplicateView(v.id)));
     menu.addItem(
       (i) => i.setTitle("Delete view").setIcon("trash-2").setDisabled(this.plugin.store.views.length <= 1).onClick(
         () => new ConfirmModal(this.app(), `Delete view "${v.name}"?`, "Your tasks are not affected, only this view's settings.", async () => {
@@ -1814,34 +1860,13 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
         else this.selected.delete(t2.id);
         this.render();
       };
+      tr.dataset.id = t2.id;
       for (const k of cols) {
-        if (k === "name") {
-          const name = tr.createEl("td", { cls: "rt-td-name" });
-          name.createSpan({ cls: `rt-dot rt-c-${t2.color}` });
-          name.createSpan({ text: t2.title || "Untitled" });
-        } else if (k === "status") {
-          const st = this.statusOf(t2);
-          const chip = tr.createEl("td").createEl("button", { cls: "rt-status-chip", text: st.name });
-          chip.toggleClass("is-done", st.done);
-          chip.onclick = (e) => {
-            e.stopPropagation();
-            this.statusMenu(e, t2);
-          };
-        } else if (k === "date") {
-          const dd = t2.date || t2.from;
-          tr.createEl("td", { text: dd ? parseYmd(dd).toLocaleDateString(void 0, { day: "numeric", month: "short", year: "numeric" }) + (t2.date ? "" : " \u2192") : "\u2014" });
-        } else if (k === "duration") tr.createEl("td", { text: String(t2.end - t2.start) });
-        else if (k === "start") tr.createEl("td", { text: fmt(t2.start) });
-        else if (k === "end") tr.createEl("td", { text: fmt(t2.end) });
-        else if (k === "group") {
-          const gc = tr.createEl("td");
-          if (t2.group) gc.createSpan({ cls: "rt-chip-sm", text: t2.group });
-        }
-        else if (k === "repeat") tr.createEl("td", { text: repeatLabel(t2) });
-        else if (k === "after") tr.createEl("td", { text: t2.deps.map((id) => (byId.get(id) || { title: "" }).title).filter(Boolean).join(", ") });
-        else this.customCell(tr.createEl("td"), t2, k, props[k]);
+        const td = tr.createEl("td");
+        td.dataset.col = k;
+        td.tabIndex = 0;
+        this.fillCell(td, t2, k, props, byId);
       }
-      tr.onclick = () => this.editTask(t2);
       tr.oncontextmenu = (e) => {
         e.preventDefault();
         this.bulkMenu(e, this.selected.has(t2.id) ? [...this.selected] : [t2.id]);
@@ -1855,6 +1880,210 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     (0, import_obsidian.setIcon)(addBtn.createSpan(), "plus");
     addBtn.createSpan({ text: "New" });
     addBtn.onclick = () => this.addTask();
+    this.bindCells(tb);
+  }
+  fillCell(td, t2, k, props, byId) {
+    td.removeClass("rt-td-name");
+    if (k === "name") {
+      td.addClass("rt-td-name");
+      td.createSpan({ cls: `rt-dot rt-c-${t2.color}` });
+      td.createSpan({ cls: "rt-name-text", text: t2.title || "Untitled" });
+      const ob = td.createEl("button", { cls: "rt-open", attr: { "aria-label": "Open in side panel" } });
+      (0, import_obsidian.setIcon)(ob.createSpan(), "panel-right");
+      ob.createSpan({ text: "OPEN" });
+      ob.onclick = (e) => {
+        e.stopPropagation();
+        this.openPeek(t2);
+      };
+    } else if (k === "status") {
+      const st = this.statusOf(t2);
+      const chip = td.createEl("button", { cls: "rt-status-chip", text: st.name });
+      chip.toggleClass("is-done", st.done);
+      chip.onclick = (e) => {
+        e.stopPropagation();
+        this.statusMenu(e, t2);
+      };
+    } else if (k === "date") {
+      const dd = t2.date || t2.from;
+      td.textContent = dd ? parseYmd(dd).toLocaleDateString(void 0, { day: "numeric", month: "short", year: "numeric" }) + (t2.date ? "" : " \u2192") : "\u2014";
+    } else if (k === "duration") td.textContent = String(t2.end - t2.start);
+    else if (k === "start") td.textContent = fmt(t2.start);
+    else if (k === "end") td.textContent = fmt(t2.end);
+    else if (k === "group") {
+      if (t2.group) td.createSpan({ cls: "rt-chip-sm", text: t2.group });
+    } else if (k === "repeat") td.textContent = repeatLabel(t2);
+    else if (k === "after") td.textContent = t2.deps.map((id) => (byId.get(id) || { title: "" }).title).filter(Boolean).join(", ");
+    else this.customCell(td, t2, k, props[k]);
+  }
+  // ---- Notion-style cells: click selects, type or Enter edits, arrows move, "OPEN" opens the side panel
+  bindCells(tb) {
+    tb.addEventListener("click", (e) => {
+      if (e.target.closest("input, button")) return;
+      const td = e.target.closest("td[data-col]");
+      if (td) this.selectCell(td);
+    });
+    tb.addEventListener("dblclick", (e) => {
+      if (e.target.closest("input, button")) return;
+      const td = e.target.closest("td[data-col]");
+      if (td) this.editCell(td);
+    });
+    tb.addEventListener("keydown", (e) => {
+      const tag = e.target.tagName;
+      if (tag === "INPUT" || tag === "BUTTON" || tag === "TEXTAREA") return;
+      const td = e.target.closest && e.target.closest("td[data-col]");
+      if (!td) return;
+      if (e.key === "Enter") {
+        e.preventDefault();
+        this.editCell(td);
+      } else if (e.key === "Escape") {
+        td.removeClass("is-cell-sel");
+        this.selCell = null;
+        td.blur();
+      } else if (e.key.startsWith("Arrow")) {
+        e.preventDefault();
+        this.moveCell(td, e.key);
+      } else if (!(e.ctrlKey || e.metaKey || e.altKey) && e.key.length === 1) {
+        e.preventDefault();
+        this.editCell(td, e.key);
+      }
+    });
+    if (this.selCell) {
+      const td = tb.querySelector(`tr[data-id="${this.selCell.id}"] td[data-col="${this.selCell.col}"]`);
+      if (td) {
+        td.addClass("is-cell-sel");
+        if (this.restoreCellFocus) td.focus();
+      }
+    }
+  }
+  selectCell(td) {
+    this.host.querySelectorAll(".is-cell-sel").forEach((x) => x.removeClass("is-cell-sel"));
+    td.addClass("is-cell-sel");
+    td.focus();
+    this.selCell = { id: td.parentElement.dataset.id, col: td.dataset.col };
+  }
+  moveCell(td, key) {
+    const tr = td.parentElement;
+    const cells = [...tr.querySelectorAll("td[data-col]")];
+    const i = cells.indexOf(td);
+    let target = null;
+    if (key === "ArrowLeft") target = cells[i - 1];
+    else if (key === "ArrowRight") target = cells[i + 1];
+    else {
+      const rows = [...tr.parentElement.querySelectorAll("tr.rt-tr")];
+      const r = rows.indexOf(tr) + (key === "ArrowDown" ? 1 : -1);
+      if (rows[r]) target = rows[r].querySelectorAll("td[data-col]")[i];
+    }
+    if (target) this.selectCell(target);
+  }
+  applyCell(task, k, v, customType) {
+    if (k === "name") task.title = v.trim() || "Untitled";
+    else if (k === "group") task.group = v.trim();
+    else if (k === "start") {
+      const m = parseHHMM(v);
+      if (m === null) return "That is not a valid time.";
+      const dur = task.end - task.start;
+      task.start = m;
+      task.end = Math.min(DAY, m + dur);
+      if (task.end <= task.start) task.end = Math.min(DAY, task.start + 15);
+    } else if (k === "end") {
+      const m = parseHHMM(v);
+      if (m === null || m <= task.start) return "End time must be after start time.";
+      task.end = m;
+    } else if (k === "duration") {
+      const n = parseInt(v, 10);
+      if (!(n > 0)) return "Duration must be at least 1 minute.";
+      task.end = Math.min(DAY, task.start + n);
+    } else if (k === "date") {
+      if (!v) return "";
+      if (task.date !== null) task.date = v;
+      else task.from = v;
+    } else {
+      task.custom = { ...task.custom };
+      if (customType === "number") {
+        if (v === "") delete task.custom[k];
+        else task.custom[k] = Number(v);
+      } else if (v.trim() === "") delete task.custom[k];
+      else task.custom[k] = v.trim();
+    }
+    return "";
+  }
+  editCell(td, seed) {
+    const id = td.parentElement.dataset.id;
+    const k = td.dataset.col;
+    const task = this.plugin.store.tasks.find((x) => x.id === id);
+    if (!task) return;
+    const def = this.plugin.store.props[k];
+    const customType = def && def.custom ? def.type : null;
+    if (k === "status") {
+      this.statusMenu(td.getBoundingClientRect ? { clientX: td.getBoundingClientRect().left, clientY: td.getBoundingClientRect().bottom } : { clientX: 0, clientY: 0 }, task);
+      return;
+    }
+    if (k === "repeat" || k === "after") {
+      this.openPeek(task);
+      return;
+    }
+    if (customType === "checkbox") {
+      task.custom = { ...task.custom, [k]: !task.custom[k] };
+      void this.plugin.save();
+      return;
+    }
+    let type = "text";
+    let value = "";
+    if (k === "name") value = task.title;
+    else if (k === "group") value = task.group;
+    else if (k === "start") {
+      type = "time";
+      value = hhmm(task.start);
+    } else if (k === "end") {
+      type = "time";
+      value = hhmm(task.end >= DAY ? DAY - 1 : task.end);
+    } else if (k === "duration") {
+      type = "number";
+      value = String(task.end - task.start);
+    } else if (k === "date") {
+      type = "date";
+      value = task.date || task.from || this.dayStr;
+    } else {
+      type = customType === "number" ? "number" : customType === "date" ? "date" : "text";
+      value = task.custom[k] === void 0 ? "" : String(task.custom[k]);
+    }
+    td.empty();
+    const inp = td.createEl("input", { type, cls: "rt-cell-input" });
+    inp.value = seed !== void 0 && type === "text" ? seed : value;
+    if (k === "group" || customType === "select") {
+      const lid = `rt-cell-list-${k}`;
+      inp.setAttribute("list", lid);
+      const dl = td.createEl("datalist", { attr: { id: lid } });
+      const opts = k === "group" ? this.plugin.groupNames() : this.modalExtra().options[k] || [];
+      for (const o of opts) dl.createEl("option", { attr: { value: o } });
+    }
+    let done = false;
+    const finish = async (save) => {
+      if (done) return;
+      done = true;
+      if (!save) {
+        this.render();
+        return;
+      }
+      const err = this.applyCell(task, k, inp.value, customType);
+      if (err) {
+        new import_obsidian.Notice(err);
+        this.render();
+        return;
+      }
+      await this.plugin.save();
+    };
+    inp.onkeydown = (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter") void finish(true);
+      else if (e.key === "Escape") void finish(false);
+    };
+    inp.onblur = () => void finish(true);
+    inp.onclick = (e) => e.stopPropagation();
+    window.requestAnimationFrame(() => {
+      inp.focus();
+      if (seed === void 0 && inp.select) inp.select();
+    });
   }
   modalExtra() {
     const store = this.plugin.store;
@@ -1888,7 +2117,8 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     for (const st of this.plugin.store.statuses) {
       menu.addItem((i) => i.setTitle(st.name).setChecked(cur === st.id).onClick(() => void this.setStatusFor([t], st)));
     }
-    menu.showAtMouseEvent(ev);
+    if (ev && typeof ev.preventDefault === "function") menu.showAtMouseEvent(ev);
+    else menu.showAtPosition({ x: ev.clientX, y: ev.clientY });
   }
   async setStatusFor(tasks, status) {
     for (const x of tasks) withStatus(x, this.dayStr, status, this.plugin.store.statuses);
@@ -2328,19 +2558,64 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
       this.plugin.groupNames(),
       this.dayStr,
       false,
-      async (draft) => {
-        if (draft) {
-          Object.assign(t, draft);
-        } else {
-          this.plugin.store.tasks = this.plugin.store.tasks.filter((x) => x.id !== t.id);
-          for (const o of this.plugin.store.tasks) o.deps = o.deps.filter((d) => d !== t.id);
-        }
-        await this.plugin.save();
-      },
+      (draft) => this.onTaskEdited(t, draft),
       this.plugin.store.statuses,
       this.plugin.store.props,
       this.modalExtra()
     ).open();
+  }
+  async onTaskEdited(t, draft) {
+    if (draft) {
+      Object.assign(t, draft);
+    } else {
+      this.plugin.store.tasks = this.plugin.store.tasks.filter((x) => x.id !== t.id);
+      for (const o of this.plugin.store.tasks) o.deps = o.deps.filter((d) => d !== t.id);
+    }
+    await this.plugin.save();
+  }
+  // Side peek: the task editor docked on the right, with a notes box, like Notion's "Open".
+  openPeek(t) {
+    this.peekId = t.id;
+    this.peekDraft = null;
+    this.render();
+  }
+  closePeek() {
+    this.peekId = null;
+    this.peekDraft = null;
+    this.render();
+  }
+  renderPeek(host) {
+    const t = this.plugin.store.tasks.find((x) => x.id === this.peekId);
+    if (!t) {
+      this.peekId = null;
+      return;
+    }
+    if (!this.peekDraft || this.peekDraft.id !== t.id) {
+      this.peekDraft = { ...t, doneDates: [...t.doneDates], deps: [...t.deps], days: t.days ? [...t.days] : null, st: { ...t.st }, custom: { ...t.custom } };
+    }
+    const panel = host.createDiv("rt-peek");
+    const top = panel.createDiv("rt-peek-top");
+    top.createSpan({ text: "Task" });
+    const close = top.createEl("button", { cls: "clickable-icon", attr: { "aria-label": "Close" } });
+    (0, import_obsidian.setIcon)(close, "x");
+    close.onclick = () => this.closePeek();
+    const body = panel.createDiv("rt-peek-body");
+    const board = this;
+    const ctx = Object.assign(Object.create(TaskModal.prototype), {
+      app: this.app(),
+      contentEl: body,
+      draft: this.peekDraft,
+      others: this.othersFor(t),
+      groups: this.plugin.groupNames(),
+      dayStr: this.dayStr,
+      isNew: false,
+      statuses: this.plugin.store.statuses,
+      props: this.plugin.store.props,
+      extra: this.modalExtra(),
+      close: () => board.closePeek(),
+      onDone: (d) => board.onTaskEdited(t, d)
+    });
+    TaskModal.prototype.onOpen.call(ctx);
   }
   // New tasks join the view's group filter so they don't vanish right after being added.
   defaultGroup() {
@@ -2364,6 +2639,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
       until: null,
       count: null,
       custom: {},
+      notes: "",
       deps: [],
       group: preset.group !== void 0 ? preset.group : this.defaultGroup(),
       color: "blue",
@@ -2781,6 +3057,12 @@ var TaskModal = class extends import_obsidian.Modal {
     });
     contentEl.appendChild(chips);
     drawChips();
+    contentEl.createDiv({ cls: "rt-notes-label", text: "Notes" });
+    const notes = contentEl.createEl("textarea", { cls: "rt-notes", attr: { placeholder: "Write notes about this task\u2026", rows: "6" } });
+    notes.value = d.notes || "";
+    notes.oninput = () => {
+      d.notes = notes.value;
+    };
     const actions = new import_obsidian.Setting(contentEl);
     actions.addButton(
       (b) => b.setButtonText("Save").setCta().onClick(async () => {
