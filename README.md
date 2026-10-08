@@ -138,9 +138,12 @@ Lines, headers and side panels are drawn a few shades darker than the page, and 
 
 Tasks, views, statuses, properties and calendar feed addresses are stored in the plugin's own data (`.obsidian/plugins/routine-timeline/data.json`), not in your notes. Moving a repeating task changes its time for every day it repeats.
 
-## Privacy
+## Network use and privacy
 
-The secret iCal address of a calendar lets anyone who has it read that calendar. It is stored in this plugin's `data.json`, so do not commit or share that file. Events are fetched directly from the address and kept in memory only.
+- The plugin makes **no network requests unless you add a calendar**. It then fetches only the iCal address you pasted (for example your Google Calendar secret address), every 30 minutes and when you press refresh
+- No telemetry, analytics, ads, accounts or payments. No data is sent anywhere else
+- Events are kept in memory only. Your tasks, views and calendar addresses are stored locally in this plugin's `data.json`
+- The secret iCal address of a calendar lets anyone who has it read that calendar. Treat `data.json` like a password file: do not commit or share it
 
 ## Limitations
 
