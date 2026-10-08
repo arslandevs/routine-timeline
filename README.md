@@ -2,7 +2,7 @@
 
 A Notion-style timeline for your daily routine, inside Obsidian: colored task bars on an hour axis, groups and filters, drag-to-connect dependency arrows, and an inline block you can embed in any note.
 
-> **Status: early release (v0.10.1).** It renders correctly in a headless DOM smoke test across every layout and zoom, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
+> **Status: early release (v0.10.2).** It renders correctly in a headless DOM smoke test across every layout and zoom, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
 
 ## Install
 
@@ -81,6 +81,10 @@ All lines are optional:
 | `zoom` | `hours`, `day` (default), `week`, `biweek`, `month`, `quarter`, `year` or `5years` |
 | `calendar` | For `layout: calendar`: `day`, `week` or `month` (default) |
 | `view` | Use the settings of a saved view by name, e.g. `view: Timeline` |
+
+## Look
+
+Lines, headers and side panels are drawn a few shades darker than the page, and task bars, cards and calendar chips take a stronger version of their color with a visible edge, so they stand out on beige and other low-contrast themes. This uses `color-mix`, so it needs a recent Obsidian (older versions fall back to the theme's own border colors).
 
 ## Data
 
