@@ -2,7 +2,7 @@
 
 A Notion-style timeline for your daily routine, inside Obsidian: colored task bars on an hour axis, groups and filters, drag-to-connect dependency arrows, and an inline block you can embed in any note.
 
-> **Status: early release (v0.8.0).** It renders correctly in a headless DOM smoke test across every layout and zoom, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
+> **Status: early release (v0.8.1).** It renders correctly in a headless DOM smoke test across every layout and zoom, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
 
 ## Install
 
@@ -26,10 +26,9 @@ Requires Obsidian 1.4.0 or newer. Works on desktop and mobile.
     - Click a column title to rename it (Enter saves, Escape cancels). The **⋯** menu renames or deletes a column, and **Add column** creates more. The Done column can be renamed but not deleted
     - Drag a card to another column, or pick the **Status** in the task editor (works on mobile). Ticking a task's checkbox moves it to Done, and unticking moves it back to the first column
     - Status is tracked per day, so a repeating task can be Done today and Not started tomorrow
-- **Properties** (View settings → Properties): rename, show or hide, **reorder** (arrows), **add** and **delete** properties
-  - **Name** is always first and cannot be deleted, so at least one property always remains
-  - Built-in properties (Status, Start, End, Group, Repeat, Comes after) can be deleted from the views and brought back with **Add property → Restore**
-  - **Add property** creates your own: text, number, checkbox, select or date. Set their values in the task editor. They show as table columns
+- **Properties** (View settings → Properties): rename, show or hide, **reorder** (arrows) and **add** properties
+  - **System properties** (Name, Status, Date, Start, End, Duration (min), Group, Repeat, Comes after) can be renamed, reordered and hidden with the eye, but **not deleted**. Any that were deleted in an earlier version come back automatically
+  - **Add property** creates your own: text, number, checkbox, select or date. These can be deleted. Set their values in the task editor. They show as table columns
   - Names apply to the table headers, the task editor and the group menu in every view
 - **Zoom dropdown** (Timeline): Hours, Day, Week, Bi-week, Month, Quarter, Year, 5 Years
   - **Day** fits all 24 hours in the view without scrolling. **Hours** zooms in so you can scroll through the day

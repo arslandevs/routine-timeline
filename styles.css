@@ -847,10 +847,11 @@
 .rt-c-purple { --rt-sw: #9065b0; }
 .rt-c-pink   { --rt-sw: #c14c8a; }
 .rt-c-red    { --rt-sw: #d44c47; }
-.rt-swatch {
+.rt-swatches button.rt-swatch {
 	background: var(--rt-sw);
+	box-shadow: none;
 }
-.rt-swatch.is-on {
+.rt-swatches button.rt-swatch.is-on {
 	border-color: var(--text-normal);
 	box-shadow: 0 0 0 2px var(--background-primary) inset;
 }
@@ -894,4 +895,8 @@
 .rt-prop .clickable-icon svg {
 	width: 14px;
 	height: 14px;
+}
+
+.rt-chip-sm {
+	background: var(--background-modifier-hover);
 }

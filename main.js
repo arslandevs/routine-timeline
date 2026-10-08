@@ -102,12 +102,14 @@ var cleanStatuses = (v) => {
   if (!list.some((s) => s.done)) list[list.length - 1].done = true;
   return list;
 };
-var PROP_KEYS = ["name", "status", "start", "end", "group", "repeat", "after"];
+var PROP_KEYS = ["name", "status", "date", "start", "end", "duration", "group", "repeat", "after"];
 var defaultProps = () => ({
   name: { label: "Name", visible: true },
   status: { label: "Status", visible: true },
+  date: { label: "Date", visible: true },
   start: { label: "Start", visible: true },
   end: { label: "End", visible: true },
+  duration: { label: "Duration (min)", visible: true },
   group: { label: "Group", visible: true },
   repeat: { label: "Repeat", visible: true },
   after: { label: "Comes after", visible: true }
@@ -130,6 +132,14 @@ var cleanProps = (v, order) => {
   }
   let list = Array.isArray(order) ? order.filter((k, i, arr) => props[k] && arr.indexOf(k) === i) : [...PROP_KEYS, ...Object.keys(props).filter((k) => props[k].custom)];
   list = ["name", ...list.filter((k) => k !== "name")];
+  if (Array.isArray(order)) {
+    for (const k of PROP_KEYS) {
+      if (!list.includes(k)) {
+        list.push(k);
+        props[k].visible = true;
+      }
+    }
+  }
   return { props, order: list };
 };
 var doneStatus = (sts) => sts.find((s) => s.done) || sts[sts.length - 1];
@@ -710,13 +720,12 @@ var TimelineBoard = class {
       };
       const del = row.createEl("button", { cls: "clickable-icon rt-prop-del", attr: { "aria-label": "Delete property" } });
       (0, import_obsidian.setIcon)(del, "trash-2");
-      if (key === "name") del.disabled = true;
+      if (!def.custom) {
+        del.disabled = true;
+        del.setAttribute("aria-label", "System property: you can hide it but not delete it");
+      }
       del.onclick = () => {
-        if (!def.custom) {
-          order.splice(idx, 1);
-          commit();
-          return;
-        }
+        if (!def.custom) return;
         new ConfirmModal(this.app(), `Delete property "${def.label}"?`, "Its values are removed from every task. This cannot be undone.", async () => {
           store.propOrder = order.filter((k) => k !== key);
           delete props[key];
@@ -730,15 +739,6 @@ var TimelineBoard = class {
     addProp.createSpan({ text: "Add property" });
     addProp.onclick = (ev) => {
       const menu = new import_obsidian.Menu();
-      for (const k of PROP_KEYS) {
-        if (order.includes(k)) continue;
-        menu.addItem((i) => i.setTitle(`Restore "${props[k].label}"`).setIcon("rotate-ccw").onClick(() => {
-          order.push(k);
-          props[k].visible = true;
-          commit();
-        }));
-      }
-      if (PROP_KEYS.some((k) => !order.includes(k))) menu.addSeparator();
       for (const type of CUSTOM_TYPES) {
         menu.addItem((i) => i.setTitle(`New ${CUSTOM_LABEL[type].toLowerCase()} property`).setIcon("plus").onClick(() => {
           const key = `c_${uid().slice(0, 8)}`;
@@ -749,7 +749,7 @@ var TimelineBoard = class {
       }
       menu.showAtMouseEvent(ev);
     };
-    panel.createDiv({ cls: "rt-panel-hint", text: "Name stays first and cannot be deleted. Names apply to the table headers, task editor and menus in every view. The eye shows or hides a table column; deleting a built-in property can be undone with Add property." });
+    panel.createDiv({ cls: "rt-panel-hint", text: "System properties (Name, Status, Date, Start, End, Duration, Group, Repeat, Comes after) can be renamed, reordered and hidden with the eye, but not deleted. Properties you add can be deleted. Names apply to the table, task editor and menus in every view." });
     const outside = (e) => {
       const target = e.target;
       if (!panel.contains(target) && !anchor.contains(target)) off();
@@ -1050,9 +1050,16 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
             e.stopPropagation();
             this.statusMenu(e, t2);
           };
-        } else if (k === "start") tr.createEl("td", { text: fmt(t2.start) });
+        } else if (k === "date") {
+          const dd = t2.date || t2.from;
+          tr.createEl("td", { text: dd ? parseYmd(dd).toLocaleDateString(void 0, { day: "numeric", month: "short", year: "numeric" }) + (t2.date ? "" : " \u2192") : "\u2014" });
+        } else if (k === "duration") tr.createEl("td", { text: String(t2.end - t2.start) });
+        else if (k === "start") tr.createEl("td", { text: fmt(t2.start) });
         else if (k === "end") tr.createEl("td", { text: fmt(t2.end) });
-        else if (k === "group") tr.createEl("td", { text: t2.group });
+        else if (k === "group") {
+          const gc = tr.createEl("td");
+          if (t2.group) gc.createSpan({ cls: "rt-chip-sm", text: t2.group });
+        }
         else if (k === "repeat") tr.createEl("td", { text: repeatLabel(t2) });
         else if (k === "after") tr.createEl("td", { text: t2.deps.map((id) => (byId.get(id) || { title: "" }).title).filter(Boolean).join(", ") });
         else this.customCell(tr.createEl("td"), t2, k, props[k]);
