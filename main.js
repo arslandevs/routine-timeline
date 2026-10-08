@@ -54,8 +54,42 @@ var hourLabelShort = (h) => `${h % 12 || 12}${h < 12 ? "a" : "p"}`;
 var dayIndex = (d, start) => Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - start.getTime()) / 864e5);
 var DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 var DEFAULT_LEN = 25;
-var occurs = (t, d) => t.date === null ? !t.days || t.days.includes(d.getDay()) : t.date === ymd(d);
-var repeatLabel = (t) => t.date !== null ? "Once" : !t.days ? "Every day" : t.days.length === 7 ? "Every day" : [...t.days].sort((a, b) => a - b).map((n) => DOW[n]).join(", ");
+var nthCache = /* @__PURE__ */ new Map();
+var effUntil = (t) => {
+  if (!t.count || !t.from) return t.until || null;
+  const sig = `${t.from}|${(t.days || []).join("")}|${t.count}`;
+  const hit = nthCache.get(t.id);
+  let last;
+  if (hit && hit.sig === sig) last = hit.last;
+  else {
+    last = null;
+    let d = parseYmd(t.from);
+    let n = 0;
+    for (let i = 0; i < 4e3 && n < t.count; i++) {
+      if (!t.days || t.days.includes(d.getDay())) {
+        n++;
+        last = ymd(d);
+      }
+      d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+    }
+    nthCache.set(t.id, { sig, last });
+  }
+  return last && t.until ? last < t.until ? last : t.until : last || t.until || null;
+};
+var occurs = (t, d) => {
+  if (t.date !== null) return t.date === ymd(d);
+  if (t.days && !t.days.includes(d.getDay())) return false;
+  const s = ymd(d);
+  if (t.from && s < t.from) return false;
+  const u = effUntil(t);
+  return !(u && s > u);
+};
+var repeatLabel = (t) => {
+  if (t.date !== null) return "Once";
+  const base = !t.days || t.days.length === 7 ? "Every day" : [...t.days].sort((a, b) => a - b).map((n) => DOW[n]).join(", ");
+  const end = t.count ? `, ${t.count}\xD7` : t.until ? `, until ${t.until}` : "";
+  return base + end;
+};
 var defaultStatuses = () => [
   { id: "not-started", name: "Not started", done: false },
   { id: "in-progress", name: "In progress", done: false },
@@ -78,17 +112,25 @@ var defaultProps = () => ({
   repeat: { label: "Repeat", visible: true },
   after: { label: "Comes after", visible: true }
 });
-var cleanProps = (v) => {
-  const out = defaultProps();
+var CUSTOM_TYPES = ["text", "number", "checkbox", "select", "date"];
+var CUSTOM_LABEL = { text: "Text", number: "Number", checkbox: "Checkbox", select: "Select", date: "Date" };
+var cleanProps = (v, order) => {
+  const props = defaultProps();
   if (v && typeof v === "object") {
-    for (const k of PROP_KEYS) {
+    for (const k of Object.keys(v)) {
       const s = v[k];
       if (!s || typeof s !== "object") continue;
-      if (typeof s.label === "string" && s.label.trim()) out[k].label = s.label.trim();
-      if (k !== "name" && s.visible === false) out[k].visible = false;
+      if (PROP_KEYS.includes(k)) {
+        if (typeof s.label === "string" && s.label.trim()) props[k].label = s.label.trim();
+        if (k !== "name" && s.visible === false) props[k].visible = false;
+      } else if (/^c_[a-z0-9]+$/i.test(k) && CUSTOM_TYPES.includes(s.type) && typeof s.label === "string" && s.label.trim()) {
+        props[k] = { label: s.label.trim(), visible: s.visible !== false, type: s.type, custom: true };
+      }
     }
   }
-  return out;
+  let list = Array.isArray(order) ? order.filter((k, i, arr) => props[k] && arr.indexOf(k) === i) : [...PROP_KEYS, ...Object.keys(props).filter((k) => props[k].custom)];
+  list = ["name", ...list.filter((k) => k !== "name")];
+  return { props, order: list };
 };
 var doneStatus = (sts) => sts.find((s) => s.done) || sts[sts.length - 1];
 var statusOf = (t, date, sts) => {
@@ -121,7 +163,7 @@ var curve = (x1, y1, x2, y2) => {
 };
 var defaultUi = () => ({ groupBy: "none", hideDone: false, groups: [], layout: "timeline", zoom: "day" });
 function seedTasks() {
-  const mk = (title, start, end, group, color, deps = []) => ({ id: uid(), title, start, end, date: null, days: null, deps, group, color, doneDates: [], st: {} });
+  const mk = (title, start, end, group, color, deps = []) => ({ id: uid(), title, start, end, date: null, days: null, from: null, until: null, count: null, custom: {}, deps, group, color, doneDates: [], st: {} });
   const plan = mk("Morning plan", 7 * 60, 7 * 60 + 30, "Morning", "yellow");
   const deep = mk("Deep work", 9 * 60, 12 * 60, "Work", "blue", [plan.id]);
   return [
@@ -145,6 +187,10 @@ function normalize(raw) {
       end: (_d2 = t.end) != null ? _d2 : 600,
       date: (_e2 = t.date) != null ? _e2 : null,
       days: cleanDays(t.days),
+      from: typeof t.from === "string" && /^\d{4}-\d{2}-\d{2}$/.test(t.from) ? t.from : null,
+      until: typeof t.until === "string" && /^\d{4}-\d{2}-\d{2}$/.test(t.until) ? t.until : null,
+      count: Number.isInteger(t.count) && t.count > 0 ? t.count : null,
+      custom: t.custom && typeof t.custom === "object" && !Array.isArray(t.custom) ? { ...t.custom } : {},
       deps: Array.isArray(t.deps) ? t.deps : t.after ? [t.after] : [],
       group: (_f = t.group) != null ? _f : "",
       color: COLORS.includes(t.color) ? t.color : "blue",
@@ -159,7 +205,8 @@ function normalize(raw) {
     layout: s.ui && LAYOUTS.includes(s.ui.layout) ? s.ui.layout : "timeline",
     zoom: s.ui && ZOOMS.includes(s.ui.zoom) ? s.ui.zoom : "day"
   };
-  return { tasks, ui, statuses: cleanStatuses(s.statuses), props: cleanProps(s.props) };
+  const pp = cleanProps(s.props, s.propOrder);
+  return { tasks, ui, statuses: cleanStatuses(s.statuses), props: pp.props, propOrder: pp.order };
 }
 function parseOpts(src) {
   const o = { height: 420, groupBy: "none", hideDone: false, groups: [], layout: "timeline", zoom: "day" };
@@ -183,7 +230,7 @@ function parseOpts(src) {
 var RoutineTimelinePlugin = class extends import_obsidian.Plugin {
   constructor() {
     super(...arguments);
-    this.store = { tasks: [], ui: defaultUi(), statuses: defaultStatuses(), props: defaultProps() };
+    this.store = { tasks: [], ui: defaultUi(), statuses: defaultStatuses(), props: defaultProps(), propOrder: [...PROP_KEYS] };
     this.boards = /* @__PURE__ */ new Set();
   }
   async onload() {
@@ -191,7 +238,7 @@ var RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     if (loaded) {
       this.store = loaded;
     } else {
-      this.store = { tasks: seedTasks(), ui: defaultUi(), statuses: defaultStatuses(), props: defaultProps() };
+      this.store = { tasks: seedTasks(), ui: defaultUi(), statuses: defaultStatuses(), props: defaultProps(), propOrder: [...PROP_KEYS] };
       await this.saveData(this.store);
     }
     this.registerView(VIEW_TYPE, (leaf) => new TimelineView(leaf, this));
@@ -621,28 +668,88 @@ var TimelineBoard = class {
       };
     }
     panel.createDiv({ cls: "rt-panel-label rt-panel-gap", text: "Properties" });
-    const props = this.plugin.store.props;
+    const store = this.plugin.store;
+    const props = store.props;
+    const order = store.propOrder;
     const list = panel.createDiv("rt-props");
-    for (const key of PROP_KEYS) {
+    const commit = () => {
+      this.reopenPanel = true;
+      void this.plugin.save();
+    };
+    order.forEach((key, idx) => {
+      const def = props[key];
       const row = list.createDiv("rt-prop");
       const eye = row.createEl("button", { cls: "clickable-icon", attr: { "aria-label": key === "name" ? "Always shown" : "Show or hide in the table" } });
-      (0, import_obsidian.setIcon)(eye, props[key].visible ? "eye" : "eye-off");
+      (0, import_obsidian.setIcon)(eye, def.visible ? "eye" : "eye-off");
       if (key === "name") eye.disabled = true;
       eye.onclick = () => {
-        props[key].visible = !props[key].visible;
-        this.reopenPanel = true;
-        void this.plugin.save();
+        def.visible = !def.visible;
+        commit();
       };
       const inp = row.createEl("input", { type: "text", cls: "rt-prop-input" });
-      inp.value = props[key].label;
+      inp.value = def.label;
       inp.onchange = () => {
         const v = inp.value.trim();
-        props[key].label = v || defaultProps()[key].label;
-        this.reopenPanel = true;
-        void this.plugin.save();
+        def.label = v || (def.custom ? CUSTOM_LABEL[def.type] : defaultProps()[key].label);
+        commit();
       };
-    }
-    panel.createDiv({ cls: "rt-panel-hint", text: "Names apply to the table, task editor and menus in every view. The eye shows or hides a table column." });
+      if (def.custom) row.createSpan({ cls: "rt-prop-type", text: CUSTOM_LABEL[def.type] });
+      const up = row.createEl("button", { cls: "clickable-icon", attr: { "aria-label": "Move up" } });
+      (0, import_obsidian.setIcon)(up, "arrow-up");
+      up.disabled = idx <= 1;
+      up.onclick = () => {
+        [order[idx - 1], order[idx]] = [order[idx], order[idx - 1]];
+        commit();
+      };
+      const down = row.createEl("button", { cls: "clickable-icon", attr: { "aria-label": "Move down" } });
+      (0, import_obsidian.setIcon)(down, "arrow-down");
+      down.disabled = key === "name" || idx >= order.length - 1;
+      down.onclick = () => {
+        [order[idx + 1], order[idx]] = [order[idx], order[idx + 1]];
+        commit();
+      };
+      const del = row.createEl("button", { cls: "clickable-icon rt-prop-del", attr: { "aria-label": "Delete property" } });
+      (0, import_obsidian.setIcon)(del, "trash-2");
+      if (key === "name") del.disabled = true;
+      del.onclick = () => {
+        if (!def.custom) {
+          order.splice(idx, 1);
+          commit();
+          return;
+        }
+        new ConfirmModal(this.app(), `Delete property "${def.label}"?`, "Its values are removed from every task. This cannot be undone.", async () => {
+          store.propOrder = order.filter((k) => k !== key);
+          delete props[key];
+          for (const x of store.tasks) if (x.custom) delete x.custom[key];
+          commit();
+        }).open();
+      };
+    });
+    const addProp = panel.createEl("button", { cls: "rt-addprop" });
+    (0, import_obsidian.setIcon)(addProp.createSpan(), "plus");
+    addProp.createSpan({ text: "Add property" });
+    addProp.onclick = (ev) => {
+      const menu = new import_obsidian.Menu();
+      for (const k of PROP_KEYS) {
+        if (order.includes(k)) continue;
+        menu.addItem((i) => i.setTitle(`Restore "${props[k].label}"`).setIcon("rotate-ccw").onClick(() => {
+          order.push(k);
+          props[k].visible = true;
+          commit();
+        }));
+      }
+      if (PROP_KEYS.some((k) => !order.includes(k))) menu.addSeparator();
+      for (const type of CUSTOM_TYPES) {
+        menu.addItem((i) => i.setTitle(`New ${CUSTOM_LABEL[type].toLowerCase()} property`).setIcon("plus").onClick(() => {
+          const key = `c_${uid().slice(0, 8)}`;
+          props[key] = { label: CUSTOM_LABEL[type], visible: true, type, custom: true };
+          order.push(key);
+          commit();
+        }));
+      }
+      menu.showAtMouseEvent(ev);
+    };
+    panel.createDiv({ cls: "rt-panel-hint", text: "Name stays first and cannot be deleted. Names apply to the table headers, task editor and menus in every view. The eye shows or hides a table column; deleting a built-in property can be undone with Add property." });
     const outside = (e) => {
       const target = e.target;
       if (!panel.contains(target) && !anchor.contains(target)) off();
@@ -870,7 +977,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     const tasks = this.layout.filter((i) => i.kind === "task").map((i) => i.t);
     const known = new Set(this.plugin.store.tasks.map((x) => x.id));
     for (const id of [...this.selected]) if (!known.has(id)) this.selected.delete(id);
-    const cols = PROP_KEYS.filter((k) => k === "name" || props[k].visible);
+    const cols = this.plugin.store.propOrder.filter((k) => props[k] && (k === "name" || props[k].visible));
     const COLS = cols.length + 1;
     if (this.selected.size > 0) {
       const bar = body.createDiv("rt-selbar");
@@ -947,7 +1054,8 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
         else if (k === "end") tr.createEl("td", { text: fmt(t2.end) });
         else if (k === "group") tr.createEl("td", { text: t2.group });
         else if (k === "repeat") tr.createEl("td", { text: repeatLabel(t2) });
-        else tr.createEl("td", { text: t2.deps.map((id) => (byId.get(id) || { title: "" }).title).filter(Boolean).join(", ") });
+        else if (k === "after") tr.createEl("td", { text: t2.deps.map((id) => (byId.get(id) || { title: "" }).title).filter(Boolean).join(", ") });
+        else this.customCell(tr.createEl("td"), t2, k, props[k]);
       }
       tr.onclick = () => this.editTask(t2);
       tr.oncontextmenu = (e) => {
@@ -963,6 +1071,32 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     (0, import_obsidian.setIcon)(addBtn.createSpan(), "plus");
     addBtn.createSpan({ text: "New" });
     addBtn.onclick = () => this.addTask();
+  }
+  modalExtra() {
+    const store = this.plugin.store;
+    const options = {};
+    for (const k of store.propOrder) {
+      if (store.props[k] && store.props[k].custom && store.props[k].type === "select") {
+        options[k] = [...new Set(store.tasks.map((x) => x.custom && x.custom[k]).filter(Boolean))];
+      }
+    }
+    return { order: store.propOrder, options };
+  }
+  customCell(td, task, key, def) {
+    const v = task.custom ? task.custom[key] : void 0;
+    if (def.type === "checkbox") {
+      const cb = td.createEl("input", { type: "checkbox", cls: "rt-check" });
+      cb.checked = !!v;
+      cb.onclick = (e) => e.stopPropagation();
+      cb.onchange = async () => {
+        task.custom = { ...task.custom, [key]: cb.checked };
+        await this.plugin.save();
+      };
+    } else if (def.type === "select") {
+      if (v) td.createSpan({ cls: "rt-chip-sm", text: String(v) });
+    } else if (def.type === "date") {
+      if (v) td.textContent = parseYmd(String(v)).toLocaleDateString(void 0, { day: "numeric", month: "short", year: "numeric" });
+    } else if (v !== void 0 && v !== "") td.textContent = String(v);
   }
   statusMenu(ev, t) {
     const menu = new import_obsidian.Menu();
@@ -1012,6 +1146,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
         title: `${x.title || "Untitled"} (copy)`,
         deps: [...x.deps],
         days: x.days ? [...x.days] : null,
+        custom: { ...x.custom },
         doneDates: [],
         st: {}
       });
@@ -1400,7 +1535,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
   editTask(t) {
     new TaskModal(
       this.app(),
-      { ...t, doneDates: [...t.doneDates], deps: [...t.deps], days: t.days ? [...t.days] : null, st: { ...t.st } },
+      { ...t, doneDates: [...t.doneDates], deps: [...t.deps], days: t.days ? [...t.days] : null, st: { ...t.st }, custom: { ...t.custom } },
       this.othersFor(t),
       this.plugin.groupNames(),
       this.dayStr,
@@ -1415,7 +1550,8 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
         await this.plugin.save();
       },
       this.plugin.store.statuses,
-      this.plugin.store.props
+      this.plugin.store.props,
+      this.modalExtra()
     ).open();
   }
   // New tasks join the view's group filter so they don't vanish right after being added.
@@ -1436,6 +1572,10 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
       end: start + DEFAULT_LEN,
       date: this.dayStr,
       days: null,
+      from: null,
+      until: null,
+      count: null,
+      custom: {},
       deps: [],
       group: preset.group !== void 0 ? preset.group : this.defaultGroup(),
       color: "blue",
@@ -1461,7 +1601,8 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
         }
       },
       this.plugin.store.statuses,
-      this.plugin.store.props
+      this.plugin.store.props,
+      this.modalExtra()
     ).open();
   }
   app() {
@@ -1534,7 +1675,7 @@ var EditTasksModal = class extends import_obsidian.Modal {
   }
 };
 var TaskModal = class extends import_obsidian.Modal {
-  constructor(app, draft, others, groups, dayStr, isNew, onDone, statuses, props) {
+  constructor(app, draft, others, groups, dayStr, isNew, onDone, statuses, props, extra) {
     super(app);
     this.draft = draft;
     this.others = others;
@@ -1544,6 +1685,7 @@ var TaskModal = class extends import_obsidian.Modal {
     this.onDone = onDone;
     this.statuses = statuses;
     this.props = props || defaultProps();
+    this.extra = extra || { order: [...PROP_KEYS], options: {} };
   }
   onOpen() {
     const { contentEl } = this;
@@ -1622,11 +1764,69 @@ var TaskModal = class extends import_obsidian.Modal {
           d.date = null;
           if (!d.days) d.days = [parseYmd(this.dayStr).getDay()];
         }
+        if (v === "none") {
+          d.from = null;
+          d.until = null;
+          d.count = null;
+        }
         drawDays();
+        drawRep();
       });
     });
     contentEl.appendChild(dayRow);
     drawDays();
+    const rbox = contentEl.createDiv("rt-repeatbox");
+    const drawRep = () => {
+      rbox.empty();
+      rbox.toggleClass("is-hidden", mode() === "none");
+      if (mode() === "none") return;
+      new import_obsidian.Setting(rbox).setName("Starts").addText((tx) => {
+        tx.inputEl.type = "date";
+        tx.setValue(d.from || this.dayStr).onChange((v) => {
+          d.from = v || null;
+        });
+      });
+      const endMode = d.count ? "count" : d.until ? "date" : "never";
+      new import_obsidian.Setting(rbox).setName("Ends").addDropdown((dd) => {
+        dd.addOption("never", "Never");
+        dd.addOption("count", "After a number of times");
+        dd.addOption("date", "On a date");
+        dd.setValue(endMode).onChange((v) => {
+          if (v === "never") {
+            d.count = null;
+            d.until = null;
+          } else if (v === "count") {
+            d.count = d.count || 10;
+            d.until = null;
+            d.from = d.from || this.dayStr;
+          } else {
+            d.until = d.until || d.from || this.dayStr;
+            d.count = null;
+          }
+          drawRep();
+        });
+      });
+      if (d.count) {
+        new import_obsidian.Setting(rbox).setName("Number of times").addText((tx) => {
+          tx.inputEl.type = "number";
+          tx.inputEl.min = "1";
+          tx.setValue(String(d.count)).onChange((v) => {
+            const n = parseInt(v, 10);
+            d.count = n > 0 ? n : null;
+            d.from = d.from || this.dayStr;
+          });
+        });
+      } else if (d.until) {
+        new import_obsidian.Setting(rbox).setName("End date").addText((tx) => {
+          tx.inputEl.type = "date";
+          tx.setValue(d.until).onChange((v) => {
+            d.until = v || null;
+          });
+        });
+      }
+    };
+    contentEl.appendChild(rbox);
+    drawRep();
     if (this.statuses && this.statuses.length) {
       new import_obsidian.Setting(contentEl).setName(this.props.status.label).setDesc(`For ${this.dayStr}.`).addDropdown((dd) => {
         for (const s of this.statuses) dd.addOption(s.id, s.name);
@@ -1634,6 +1834,34 @@ var TaskModal = class extends import_obsidian.Modal {
           const s = this.statuses.find((x) => x.id === v);
           if (s) withStatus(d, this.dayStr, s, this.statuses);
         });
+      });
+    }
+    d.custom = d.custom || {};
+    for (const key of this.extra.order) {
+      const def = this.props[key];
+      if (!def || !def.custom) continue;
+      const set = (v) => {
+        if (v === "" || v === null || v === false && def.type !== "checkbox") delete d.custom[key];
+        else d.custom[key] = v;
+      };
+      const row = new import_obsidian.Setting(contentEl).setName(def.label);
+      if (def.type === "checkbox") row.addToggle((tg) => tg.setValue(!!d.custom[key]).onChange((v) => d.custom[key] = v));
+      else if (def.type === "number") row.addText((tx) => {
+        tx.inputEl.type = "number";
+        tx.setValue(d.custom[key] === void 0 ? "" : String(d.custom[key])).onChange((v) => set(v === "" ? "" : Number(v)));
+      });
+      else if (def.type === "date") row.addText((tx) => {
+        tx.inputEl.type = "date";
+        tx.setValue(d.custom[key] ? String(d.custom[key]) : "").onChange((v) => set(v));
+      });
+      else row.addText((tx) => {
+        if (def.type === "select") {
+          const id = `rt-opt-${key}`;
+          tx.inputEl.setAttribute("list", id);
+          const dl = contentEl.createEl("datalist", { attr: { id } });
+          for (const o of this.extra.options[key] || []) dl.createEl("option", { attr: { value: o } });
+        }
+        tx.setValue(d.custom[key] === void 0 ? "" : String(d.custom[key])).onChange((v) => set(v.trim()));
       });
     }
     const chips = contentEl.createDiv("rt-chips");
@@ -1674,6 +1902,10 @@ var TaskModal = class extends import_obsidian.Modal {
           return;
         }
         if (d.days && d.days.length === 7) d.days = null;
+        if (d.date === null && d.until && d.from && d.until < d.from) {
+          new import_obsidian.Notice("The end date must be on or after the start date.");
+          return;
+        }
         this.close();
         await this.onDone(d);
       })

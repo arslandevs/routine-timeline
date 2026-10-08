@@ -2,7 +2,7 @@
 
 A Notion-style timeline for your daily routine, inside Obsidian: colored task bars on an hour axis, groups and filters, drag-to-connect dependency arrows, and an inline block you can embed in any note.
 
-> **Status: early release (v0.7.0).** It renders correctly in a headless DOM smoke test across every layout and zoom, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
+> **Status: early release (v0.8.0).** It renders correctly in a headless DOM smoke test across every layout and zoom, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
 
 ## Install
 
@@ -26,7 +26,11 @@ Requires Obsidian 1.4.0 or newer. Works on desktop and mobile.
     - Click a column title to rename it (Enter saves, Escape cancels). The **⋯** menu renames or deletes a column, and **Add column** creates more. The Done column can be renamed but not deleted
     - Drag a card to another column, or pick the **Status** in the task editor (works on mobile). Ticking a task's checkbox moves it to Done, and unticking moves it back to the first column
     - Status is tracked per day, so a repeating task can be Done today and Not started tomorrow
-- **Rename and hide properties**: in **View settings → Properties**, rename Name, Status, Start, End, Group, Repeat and Comes after, and use the eye to hide a table column. The names apply to the table headers, the task editor and the group menu in every view
+- **Properties** (View settings → Properties): rename, show or hide, **reorder** (arrows), **add** and **delete** properties
+  - **Name** is always first and cannot be deleted, so at least one property always remains
+  - Built-in properties (Status, Start, End, Group, Repeat, Comes after) can be deleted from the views and brought back with **Add property → Restore**
+  - **Add property** creates your own: text, number, checkbox, select or date. Set their values in the task editor. They show as table columns
+  - Names apply to the table headers, the task editor and the group menu in every view
 - **Zoom dropdown** (Timeline): Hours, Day, Week, Bi-week, Month, Quarter, Year, 5 Years
   - **Day** fits all 24 hours in the view without scrolling. **Hours** zooms in so you can scroll through the day
   - **Week and larger** show one column per day. A repeating task appears only on the days it repeats: at its start time inside the day column in Week and Bi-week, and as a mark per day (consecutive days merge) in Month and larger. These views are read-only: click a bar to edit it
@@ -37,7 +41,7 @@ Requires Obsidian 1.4.0 or newer. Works on desktop and mobile.
 - **Move and resize**: drag a bar to move it earlier or later, drag either edge to change the start or end. Snaps to 15 minutes
 - **Dependency arrows**: drag from the small dot at the end of a bar onto another bar. A task can have several arrows into it. Tap an arrow to select it, then tap the ✕ to remove it
   - If a task starts before the one it follows ends, the arrow turns **red and dashed**
-- **Repeating tasks**: set **Repeat** in the task editor to *Does not repeat*, *Every day* or *On specific days of the week* (for example only Tue and Thu). A done checkbox is tracked separately for each day
+- **Repeating tasks**: set **Repeat** in the task editor to *Does not repeat*, *Every day* or *On specific days of the week* (for example only Tue and Thu). Choose when it **starts** and how long it lasts: **never ends**, **after a number of times** (e.g. 10 occurrences) or **on a date**. A done checkbox is tracked separately for each day
 - **New tasks** start at the time you pick and default to **25 minutes** long. Changing the start moves the end with it until you set the end yourself
 - **Groups and filters**: search box, a Filter menu (hide completed, pick groups) and a Group menu (none, by group, by status). Group headers collapse when tapped
 - **Inline in a note** (see below)
@@ -79,7 +83,7 @@ Tasks are stored in the plugin's own data (`.obsidian/plugins/routine-timeline/d
 
 ## Limitations
 
-- Repeats are every day or chosen weekdays. There is no monthly repeat, end date or per-day exception yet
+- Repeats are every day or chosen weekdays, with an optional start, count or end date. There is no monthly repeat or per-day exception yet
 - In Week view a short bar is stretched to a readable minimum width, but it always starts at the task's start time. Bars late in the evening are cut at the end of the day column
 - Week, Bi-week, Month, Quarter, Year and 5 Years zooms are read-only, and dependency arrows are only drawn in Hours and Day
 - Board drag and drop uses the browser's drag events, so it works on desktop but not by touch (use the checkbox or the Status field in the editor on mobile)

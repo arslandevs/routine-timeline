@@ -836,3 +836,62 @@
 	font-size: var(--font-ui-smaller);
 	color: var(--text-faint);
 }
+
+/* Color swatches: strong colors so they read on any theme */
+.rt-c-gray   { --rt-sw: #9b9a97; }
+.rt-c-brown  { --rt-sw: #a17c5b; }
+.rt-c-orange { --rt-sw: #d9730d; }
+.rt-c-yellow { --rt-sw: #cb912f; }
+.rt-c-green  { --rt-sw: #448361; }
+.rt-c-blue   { --rt-sw: #337ea9; }
+.rt-c-purple { --rt-sw: #9065b0; }
+.rt-c-pink   { --rt-sw: #c14c8a; }
+.rt-c-red    { --rt-sw: #d44c47; }
+.rt-swatch {
+	background: var(--rt-sw);
+}
+.rt-swatch.is-on {
+	border-color: var(--text-normal);
+	box-shadow: 0 0 0 2px var(--background-primary) inset;
+}
+.rt-dot {
+	background: var(--rt-sw);
+}
+
+/* Repeat range in the task editor */
+.rt-repeatbox.is-hidden {
+	display: none;
+}
+
+/* Property rows in the view settings panel */
+.rt-prop-type {
+	flex: none;
+	padding: 0 6px;
+	border-radius: 999px;
+	background: var(--background-modifier-hover);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+.rt-prop button:disabled {
+	opacity: 0.3;
+	pointer-events: none;
+}
+.rt-prop-del:hover {
+	color: var(--text-error);
+}
+.rt-addprop {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	margin-top: 6px;
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-muted);
+}
+.rt-addprop:hover {
+	color: var(--text-normal);
+}
+.rt-prop .clickable-icon svg {
+	width: 14px;
+	height: 14px;
+}
