@@ -2,7 +2,7 @@
 
 A Notion-style timeline for your daily routine, inside Obsidian: colored task bars on an hour axis, groups and filters, drag-to-connect dependency arrows, and an inline block you can embed in any note.
 
-> **Status: early release (v0.5.0).** It renders correctly in a headless DOM smoke test across every layout and zoom, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
+> **Status: early release (v0.6.0).** It renders correctly in a headless DOM smoke test across every layout and zoom, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
 
 ## Install
 
@@ -18,7 +18,8 @@ Requires Obsidian 1.4.0 or newer. Works on desktop and mobile.
 ## Features
 
 - **Three layouts**: Table, Board and Timeline. Click the sliders icon (**View settings**) in the toolbar and pick one under **Layout**. Same tasks, same filters, different view
-  - **Table**: one row per task (done, name, status, start, end, group, repeat, comes after). Click a row to edit
+  - **Table**: one row per task (select, done, name, status, start, end, group, repeat, comes after). Click a row to edit
+    - **Delete**: use the trash icon on a row, or tick the select boxes (or the header box for all) and press **Delete** in the bar that appears. You are asked to confirm first, and any arrows pointing at a deleted task are removed
   - **Board**: always shows the status columns **Not started**, **In progress** and **Done**, even when a column is empty, and every column has its own **+ New** button
     - Click a column title to rename it (Enter saves, Escape cancels). The **⋯** menu renames or deletes a column, and **Add column** creates more. The Done column can be renamed but not deleted
     - Drag a card to another column, or pick the **Status** in the task editor (works on mobile). Ticking a task's checkbox moves it to Done, and unticking moves it back to the first column

@@ -742,3 +742,49 @@
 	align-self: flex-start;
 	margin-top: 4px;
 }
+
+/* Table: selection and delete */
+.rt-bulk {
+	position: sticky;
+	top: 0;
+	z-index: 3;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 10px;
+	background: var(--background-secondary);
+	border-bottom: 1px solid var(--background-modifier-border);
+	font-size: var(--font-ui-small);
+}
+.rt-bulk span {
+	margin-right: auto;
+}
+.rt-bulk button {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+}
+.rt-tr.is-selected {
+	background: var(--background-modifier-hover);
+}
+.rt-td-trash {
+	width: 32px;
+	text-align: right;
+}
+.rt-td-trash button {
+	opacity: 0;
+	color: var(--text-muted);
+}
+.rt-tr:hover .rt-td-trash button,
+.rt-tr.is-selected .rt-td-trash button,
+.rt-td-trash button:focus-visible {
+	opacity: 1;
+}
+.rt-td-trash button:hover {
+	color: var(--text-error);
+}
+@media (hover: none) {
+	.rt-td-trash button {
+		opacity: 1;
+	}
+}
