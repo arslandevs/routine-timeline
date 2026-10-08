@@ -1391,3 +1391,32 @@
 	box-sizing: border-box;
 	margin-bottom: 12px;
 }
+
+/* Distinct status colors */
+.rt-table button.rt-status-chip {
+	background: var(--rt-bg);
+	color: var(--rt-fg);
+	box-shadow: none;
+}
+.rt-status-dot {
+	display: inline-block;
+	flex: none;
+	width: 9px;
+	height: 9px;
+	margin-right: 2px;
+	border-radius: 50%;
+	background: var(--rt-sw);
+}
+.rt-swatches-left {
+	justify-content: flex-start;
+}
+
+/* Short calendar blocks keep time and title on one line */
+.rt-cal-chip.is-block.is-short {
+	flex-direction: row;
+	align-items: center;
+	gap: 4px;
+	padding-top: 0;
+	padding-bottom: 0;
+	white-space: nowrap;
+}

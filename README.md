@@ -2,7 +2,7 @@
 
 A Notion-style timeline for your daily routine, inside Obsidian: colored task bars on an hour axis, groups and filters, drag-to-connect dependency arrows, and an inline block you can embed in any note.
 
-> **Status: early release (v0.10.0).** It renders correctly in a headless DOM smoke test across every layout and zoom, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
+> **Status: early release (v0.10.1).** It renders correctly in a headless DOM smoke test across every layout and zoom, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
 
 ## Install
 
@@ -19,7 +19,7 @@ Requires Obsidian 1.4.0 or newer. Works on desktop and mobile.
 
 - **View tabs** across the top, like Notion (also inside a note: click a tab to use that view's settings in the block). Click the active tab for its menu: Rename, Display as (Table, Board, Timeline, Calendar), Edit view, Duplicate view, Delete view. Also: *Default view | Timeline | … | +*. Click a tab to switch, **+** to add a Table, Board, Timeline or Calendar view, double-click a tab to rename it, right-click for Rename, Duplicate and Delete. Each view keeps its own layout, zoom, filters and grouping. **View settings → Layout** changes the layout of the current view
 - **Four layouts**: Table, Board, Timeline and Calendar. Same tasks, same filters, different view
-  - **Table**: edit like a spreadsheet. Click a cell to select it, then just **type** to replace its value (or press **Enter** or double-click to edit), **Enter** saves, **Esc** cancels, arrow keys move between cells. Status is a chip you click. Hover a row's name to show **OPEN**, which opens the task in a side panel with all its fields and a **Notes** box. Hover a row (or select any) to show its checkbox
+  - **Table**: edit like a spreadsheet. Click a cell to select it, then just **type** to replace its value (or press **Enter** or double-click to edit), **Enter** saves, **Esc** cancels, arrow keys move between cells. Status is a chip you click. Hover a row's name to show **OPEN**, which opens the task in a side panel with all its fields and a **Notes** box. Click anywhere outside the panel to close it; valid edits are saved automatically Hover a row (or select any) to show its checkbox
     - **Selecting**: tick one or more rows, or the header box for all. A floating bar shows **N selected**, a trash icon, a **⋯** menu and a clear button, like Notion. Right-click a row for the same menu
     - **⋯ menu**: *Mark as* any status, *Edit group & color* for all selected, *Duplicate*, and *Delete*. Delete asks you to confirm and removes any arrows pointing at the deleted tasks
     - **Status**: click a status chip in a row to change it
@@ -27,6 +27,7 @@ Requires Obsidian 1.4.0 or newer. Works on desktop and mobile.
     - Click a column title to rename it (Enter saves, Escape cancels). The **⋯** menu renames or deletes a column, and **Add column** creates more. The Done column can be renamed but not deleted
     - Drag a card to another column, or pick the **Status** in the task editor (works on mobile). Ticking a task's checkbox moves it to Done, and unticking moves it back to the first column
     - Status is tracked per day, so a repeating task can be Done today and Not started tomorrow
+    - Each status has its own color (Not started gray, In progress blue, Done green; new columns get their own). Change it from the column's **⋯ → Change color**; the color shows on the table's status chip and the column header
 - **Properties** (View settings → Properties): rename, show or hide, **reorder** (arrows) and **add** properties
   - **System properties** (Name, Status, Date, Start, End, Duration (min), Group, Repeat, Comes after) can be renamed, reordered and hidden with the eye, but **not deleted**. Any that were deleted in an earlier version come back automatically
   - **Add property** creates your own: text, number, checkbox, select or date. These can be deleted. Set their values in the task editor. They show as table columns

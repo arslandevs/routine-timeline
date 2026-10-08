@@ -93,14 +93,16 @@ var repeatLabel = (t) => {
   const end = t.count ? `, ${t.count}\xD7` : t.until ? `, until ${t.until}` : "";
   return base + end;
 };
+var STATUS_COLORS = { "not-started": "gray", "in-progress": "blue", done: "green" };
+var EXTRA_STATUS_COLORS = ["purple", "orange", "pink", "yellow", "brown", "red"];
 var defaultStatuses = () => [
-  { id: "not-started", name: "Not started", done: false },
-  { id: "in-progress", name: "In progress", done: false },
-  { id: "done", name: "Done", done: true }
+  { id: "not-started", name: "Not started", done: false, color: "gray" },
+  { id: "in-progress", name: "In progress", done: false, color: "blue" },
+  { id: "done", name: "Done", done: true, color: "green" }
 ];
 var cleanStatuses = (v) => {
   const seen = /* @__PURE__ */ new Set();
-  const list = Array.isArray(v) ? v.filter((s) => s && typeof s.id === "string" && typeof s.name === "string" && s.name.trim() && !seen.has(s.id) && seen.add(s.id)).map((s) => ({ id: s.id, name: s.name.trim(), done: !!s.done })) : [];
+  const list = Array.isArray(v) ? v.filter((s) => s && typeof s.id === "string" && typeof s.name === "string" && s.name.trim() && !seen.has(s.id) && seen.add(s.id)).map((s, i) => ({ id: s.id, name: s.name.trim(), done: !!s.done, color: COLORS.includes(s.color) ? s.color : STATUS_COLORS[s.id] || EXTRA_STATUS_COLORS[i % EXTRA_STATUS_COLORS.length] })) : [];
   if (list.length === 0) return defaultStatuses();
   if (!list.some((s) => s.done)) list[list.length - 1].done = true;
   return list;
@@ -747,6 +749,7 @@ var TimelineBoard = class {
     this.embedViewId = null;
     this.peekId = null;
     this.peekDraft = null;
+    this.offPeek = null;
     this.selCell = null;
     this.restoreCellFocus = false;
     this.calTop = null;
@@ -771,6 +774,7 @@ var TimelineBoard = class {
     window.clearTimeout(this.resizeTimer);
     if (this.ro) this.ro.disconnect();
     if (this.offPanel) this.offPanel();
+    if (this.offPeek) this.offPeek();
   }
   px(min) {
     return min / 60 * this.hw;
@@ -925,6 +929,7 @@ var TimelineBoard = class {
     const prevLeft = (_c = prev == null ? void 0 : prev.scrollLeft) != null ? _c : 0;
     const prevTop = (_e = prev == null ? void 0 : prev.scrollTop) != null ? _e : 0;
     if (this.offPanel) this.offPanel();
+    if (this.offPeek) this.offPeek();
     host.empty();
     host.addClass("rt-root");
     host.toggleClass("is-embedded", this.opts.embedded);
@@ -1669,7 +1674,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
         const y = ev.clientY - col.getBoundingClientRect().top;
         this.addOn(date, Math.floor(y / HOUR_H * 60 / SNAP) * SNAP);
       };
-      const timed = perDay[i].filter((x) => !x.allDay).map((x) => ({ ...x, s: x.start, e: Math.max(x.end, x.start + 25) })).sort((a, b) => a.s - b.s || b.e - a.e);
+      const timed = perDay[i].filter((x) => !x.allDay).map((x) => ({ ...x, ts: x.start, te: Math.max(x.end, x.start + 25) })).sort((a, b) => a.ts - b.ts || b.te - a.te);
       const lanes = [];
       let cluster = [];
       let clusterEnd = -1;
@@ -1679,24 +1684,25 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
         cluster = [];
       };
       for (const it of timed) {
-        if (it.s >= clusterEnd) {
+        if (it.ts >= clusterEnd) {
           flush();
           lanes.length = 0;
         }
-        let l = lanes.findIndex((end) => end <= it.s);
+        let l = lanes.findIndex((end) => end <= it.ts);
         if (l < 0) {
           l = lanes.length;
-          lanes.push(it.e);
-        } else lanes[l] = it.e;
+          lanes.push(it.te);
+        } else lanes[l] = it.te;
         it.lane = l;
-        clusterEnd = Math.max(clusterEnd, it.e);
+        clusterEnd = Math.max(clusterEnd, it.te);
         cluster.push(it);
       }
       flush();
       for (const it of timed) {
         const el = this.chip(col, it, date, "is-block");
-        el.style.top = `${it.s / 60 * HOUR_H}px`;
-        el.style.height = `${Math.max((it.e - it.s) / 60 * HOUR_H - 1, 18)}px`;
+        el.toggleClass("is-short", it.te - it.ts < 40);
+        el.style.top = `${it.ts / 60 * HOUR_H}px`;
+        el.style.height = `${Math.max((it.te - it.ts) / 60 * HOUR_H - 1, 18)}px`;
         el.style.left = `calc(${it.lane / it.cols * 100}% + 1px)`;
         el.style.width = `calc(${100 / it.cols}% - 3px)`;
       }
@@ -1897,7 +1903,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       };
     } else if (k === "status") {
       const st = this.statusOf(t2);
-      const chip = td.createEl("button", { cls: "rt-status-chip", text: st.name });
+      const chip = td.createEl("button", { cls: `rt-status-chip rt-c-${st.color}`, text: st.name });
       chip.toggleClass("is-done", st.done);
       chip.onclick = (e) => {
         e.stopPropagation();
@@ -2195,6 +2201,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       const col = board.createDiv("rt-col");
       const items = this.visible.filter((t) => this.statusOf(t).id === st.id);
       const head = col.createDiv("rt-col-head");
+      head.createSpan({ cls: `rt-status-dot rt-c-${st.color}` });
       this.renderColTitle(head, st);
       head.createSpan({ cls: "rt-gcount", text: String(items.length) });
       const more = head.createEl("button", { cls: "clickable-icon rt-col-more", attr: { "aria-label": "Column options" } });
@@ -2244,7 +2251,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     (0, import_obsidian.setIcon)(addCol.createSpan(), "plus");
     addCol.createSpan({ text: "Add column" });
     addCol.onclick = async () => {
-      const st = { id: uid(), name: "New column", done: false };
+      const st = { id: uid(), name: "New column", done: false, color: EXTRA_STATUS_COLORS[(sts.length - 3 + EXTRA_STATUS_COLORS.length * 4) % EXTRA_STATUS_COLORS.length] };
       sts.push(st);
       this.renameId = st.id;
       await this.plugin.save();
@@ -2292,6 +2299,10 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
         this.render();
       })
     );
+    menu.addItem((i) => i.setTitle("Change color").setIcon("palette").onClick(() => new ColorPickModal(this.app(), `Color for "${st.name}"`, st.color, async (c) => {
+      st.color = c;
+      await this.plugin.save();
+    }).open()));
     menu.addItem(
       (i) => i.setTitle(st.done ? "Delete (the Done column stays)" : "Delete column").setIcon("trash").setDisabled(st.done || sts.length <= 1).onClick(async () => {
         const at = sts.findIndex((s) => s.id === st.id);
@@ -2575,11 +2586,25 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
   }
   // Side peek: the task editor docked on the right, with a notes box, like Notion's "Open".
   openPeek(t) {
+    if (this.peekId && this.peekId !== t.id) void this.flushPeek();
     this.peekId = t.id;
     this.peekDraft = null;
     this.render();
   }
-  closePeek() {
+  // Save the side panel's edits if they are valid and changed (used when it closes by clicking away).
+  async flushPeek() {
+    const task = this.plugin.store.tasks.find((x) => x.id === this.peekId);
+    const d = this.peekDraft;
+    if (!task || !d || d.id !== task.id) return;
+    if (d.end <= d.start) return;
+    if (d.date === null && d.days && d.days.length === 0) return;
+    if (d.date === null && d.until && d.from && d.until < d.from) return;
+    if (d.days && d.days.length === 7) d.days = null;
+    if (JSON.stringify(d) === JSON.stringify(task)) return;
+    await this.onTaskEdited(task, d);
+  }
+  closePeek(save) {
+    if (save) void this.flushPeek();
     this.peekId = null;
     this.peekDraft = null;
     this.render();
@@ -2598,9 +2623,20 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
     top.createSpan({ text: "Task" });
     const close = top.createEl("button", { cls: "clickable-icon", attr: { "aria-label": "Close" } });
     (0, import_obsidian.setIcon)(close, "x");
-    close.onclick = () => this.closePeek();
+    close.onclick = () => this.closePeek(true);
     const body = panel.createDiv("rt-peek-body");
     const board = this;
+    const onDown = (e) => {
+      const target = e.target;
+      if (panel.contains(target)) return;
+      if (target.closest && target.closest(".modal-container, .menu, .suggestion-container, .rt-open")) return;
+      board.closePeek(true);
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    this.offPeek = () => {
+      document.removeEventListener("pointerdown", onDown, true);
+      this.offPeek = null;
+    };
     const ctx = Object.assign(Object.create(TaskModal.prototype), {
       app: this.app(),
       contentEl: body,
@@ -2716,6 +2752,30 @@ var AddFeedModal = class extends import_obsidian.Modal {
     this.contentEl.empty();
   }
 };
+var ColorPickModal = class extends import_obsidian.Modal {
+  constructor(app, title, current, onPick) {
+    super(app);
+    this.title = title;
+    this.current = current;
+    this.onPick = onPick;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.createEl("h3", { text: this.title });
+    const swatches = contentEl.createDiv("rt-swatches rt-swatches-left");
+    for (const c of COLORS) {
+      const b = swatches.createEl("button", { cls: `rt-swatch rt-c-${c}`, attr: { "aria-label": c } });
+      b.toggleClass("is-on", c === this.current);
+      b.onclick = async () => {
+        this.close();
+        await this.onPick(c);
+      };
+    }
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
 var EventModal = class extends import_obsidian.Modal {
   constructor(app, ev) {
     super(app);
@@ -2727,7 +2787,8 @@ var EventModal = class extends import_obsidian.Modal {
     contentEl.createEl("h3", { text: e.title });
     const fmtD = (ms) => new Date(ms).toLocaleDateString(void 0, { weekday: "short", day: "numeric", month: "short", year: "numeric" });
     const fmtT = (ms) => new Date(ms).toLocaleTimeString(void 0, { hour: "numeric", minute: "2-digit" });
-    const when = e.allDay ? fmtD(e.start) : `${fmtD(e.start)}, ${fmtT(e.start)} \u2013 ${fmtT(e.end)}`;
+    const ok = Number.isFinite(e.start) && Number.isFinite(e.end);
+    const when = !ok ? "Time unavailable" : e.allDay ? fmtD(e.start) : `${fmtD(e.start)}, ${fmtT(e.start)} \u2013 ${fmtT(e.end)}`;
     contentEl.createEl("p", { text: when });
     if (e.location) contentEl.createEl("p", { text: `Location: ${e.location}` });
     if (e.feedName) contentEl.createEl("p", { cls: "rt-hint", text: `Calendar: ${e.feedName} (read-only)` });
