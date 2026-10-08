@@ -6,12 +6,16 @@ A Notion-style task and routine planner for Obsidian. One set of tasks, four lay
 
 ## Install
 
-### Manual
+### From a release (easiest)
 
-1. Download `main.js`, `manifest.json` and `styles.css` from this repo.
-2. Put them in `<your vault>/.obsidian/plugins/routine-timeline/`.
-3. In Obsidian, go to **Settings → Community plugins** and enable **Routine Timeline**.
-4. Open it from the ribbon icon, or run the command **Open routine timeline**.
+1. Open the [latest release](https://github.com/arslandevs/routine-timeline/releases/latest) and download `main.js`, `manifest.json` and `styles.css`
+2. Put the three files in `<your vault>/.obsidian/plugins/routine-timeline/` (create the folder if needed)
+3. In Obsidian, go to **Settings → Community plugins** and enable **Routine Timeline**
+4. Open it from the ribbon icon, or run the command **Open routine timeline**
+
+### With BRAT (auto-updates)
+
+Install the **BRAT** community plugin, choose **Add beta plugin**, and enter `arslandevs/routine-timeline`. BRAT installs the latest release and keeps it updated.
 
 Requires Obsidian 1.4.0 or newer (a recent version is recommended for the contrast styling). Works on desktop and mobile, with a few desktop-only drag interactions noted below.
 
