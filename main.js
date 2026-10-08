@@ -68,6 +68,28 @@ var cleanStatuses = (v) => {
   if (!list.some((s) => s.done)) list[list.length - 1].done = true;
   return list;
 };
+var PROP_KEYS = ["name", "status", "start", "end", "group", "repeat", "after"];
+var defaultProps = () => ({
+  name: { label: "Name", visible: true },
+  status: { label: "Status", visible: true },
+  start: { label: "Start", visible: true },
+  end: { label: "End", visible: true },
+  group: { label: "Group", visible: true },
+  repeat: { label: "Repeat", visible: true },
+  after: { label: "Comes after", visible: true }
+});
+var cleanProps = (v) => {
+  const out = defaultProps();
+  if (v && typeof v === "object") {
+    for (const k of PROP_KEYS) {
+      const s = v[k];
+      if (!s || typeof s !== "object") continue;
+      if (typeof s.label === "string" && s.label.trim()) out[k].label = s.label.trim();
+      if (k !== "name" && s.visible === false) out[k].visible = false;
+    }
+  }
+  return out;
+};
 var doneStatus = (sts) => sts.find((s) => s.done) || sts[sts.length - 1];
 var statusOf = (t, date, sts) => {
   const id = t.st && t.st[date];
@@ -137,7 +159,7 @@ function normalize(raw) {
     layout: s.ui && LAYOUTS.includes(s.ui.layout) ? s.ui.layout : "timeline",
     zoom: s.ui && ZOOMS.includes(s.ui.zoom) ? s.ui.zoom : "day"
   };
-  return { tasks, ui, statuses: cleanStatuses(s.statuses) };
+  return { tasks, ui, statuses: cleanStatuses(s.statuses), props: cleanProps(s.props) };
 }
 function parseOpts(src) {
   const o = { height: 420, groupBy: "none", hideDone: false, groups: [], layout: "timeline", zoom: "day" };
@@ -161,7 +183,7 @@ function parseOpts(src) {
 var RoutineTimelinePlugin = class extends import_obsidian.Plugin {
   constructor() {
     super(...arguments);
-    this.store = { tasks: [], ui: defaultUi(), statuses: defaultStatuses() };
+    this.store = { tasks: [], ui: defaultUi(), statuses: defaultStatuses(), props: defaultProps() };
     this.boards = /* @__PURE__ */ new Set();
   }
   async onload() {
@@ -169,7 +191,7 @@ var RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     if (loaded) {
       this.store = loaded;
     } else {
-      this.store = { tasks: seedTasks(), ui: defaultUi(), statuses: defaultStatuses() };
+      this.store = { tasks: seedTasks(), ui: defaultUi(), statuses: defaultStatuses(), props: defaultProps() };
       await this.saveData(this.store);
     }
     this.registerView(VIEW_TYPE, (leaf) => new TimelineView(leaf, this));
@@ -286,6 +308,8 @@ var TimelineBoard = class {
     this.lastW = 0;
     this.offPanel = null;
     this.renameId = null;
+    this.reopenPanel = false;
+    this.settingsBtn = null;
     this.selected = /* @__PURE__ */ new Set();
     this.resizeTimer = 0;
     this.timer = window.setInterval(() => this.updateNow(), 6e4);
@@ -460,6 +484,10 @@ var TimelineBoard = class {
     this.hw = this.ui.zoom === "hours" ? HOURS_W : Math.max(MIN_HOUR_W, Math.floor(this.availWidth() / 24));
     this.compute();
     this.renderToolbar(host);
+    if (this.reopenPanel) {
+      this.reopenPanel = false;
+      this.togglePanel(this.settingsBtn);
+    }
     const layout = this.ui.layout;
     if (layout === "table") this.renderTable(host);
     else if (layout === "board") this.renderBoard(host);
@@ -542,9 +570,11 @@ var TimelineBoard = class {
     const ui = this.ui;
     const filterOn = ui.hideDone || ui.groups.length > 0;
     this.tool(head, "list-filter", "Filter", filterOn).onclick = (ev) => this.filterMenu(ev);
-    const groupName = { none: "Group", group: "By group", status: "By status" }[ui.groupBy];
+    const pr = this.plugin.store.props;
+    const groupName = { none: pr.group.label, group: `By ${pr.group.label.toLowerCase()}`, status: `By ${pr.status.label.toLowerCase()}` }[ui.groupBy];
     if (ui.layout !== "board") this.tool(head, "layout-list", groupName, ui.groupBy !== "none").onclick = (ev) => this.groupMenu(ev);
     const settings = head.createEl("button", { cls: "clickable-icon", attr: { "aria-label": "View settings" } });
+    this.settingsBtn = settings;
     (0, import_obsidian.setIcon)(settings, "sliders-horizontal");
     settings.onclick = (ev) => {
       ev.stopPropagation();
@@ -590,6 +620,29 @@ var TimelineBoard = class {
         } else if (this.offPanel) this.offPanel();
       };
     }
+    panel.createDiv({ cls: "rt-panel-label rt-panel-gap", text: "Properties" });
+    const props = this.plugin.store.props;
+    const list = panel.createDiv("rt-props");
+    for (const key of PROP_KEYS) {
+      const row = list.createDiv("rt-prop");
+      const eye = row.createEl("button", { cls: "clickable-icon", attr: { "aria-label": key === "name" ? "Always shown" : "Show or hide in the table" } });
+      (0, import_obsidian.setIcon)(eye, props[key].visible ? "eye" : "eye-off");
+      if (key === "name") eye.disabled = true;
+      eye.onclick = () => {
+        props[key].visible = !props[key].visible;
+        this.reopenPanel = true;
+        void this.plugin.save();
+      };
+      const inp = row.createEl("input", { type: "text", cls: "rt-prop-input" });
+      inp.value = props[key].label;
+      inp.onchange = () => {
+        const v = inp.value.trim();
+        props[key].label = v || defaultProps()[key].label;
+        this.reopenPanel = true;
+        void this.plugin.save();
+      };
+    }
+    panel.createDiv({ cls: "rt-panel-hint", text: "Names apply to the table, task editor and menus in every view. The eye shows or hides a table column." });
     const outside = (e) => {
       const target = e.target;
       if (!panel.contains(target) && !anchor.contains(target)) off();
@@ -643,8 +696,8 @@ var TimelineBoard = class {
     const menu = new import_obsidian.Menu();
     const options = [
       ["none", "No grouping"],
-      ["group", "Group"],
-      ["status", "Status"]
+      ["group", this.plugin.store.props.group.label],
+      ["status", this.plugin.store.props.status.label]
     ];
     for (const [value, title] of options) {
       menu.addItem(
@@ -813,26 +866,32 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
   // ---- table layout --------------------------------------------------------------
   renderTable(host) {
     const body = host.createDiv("rt-body");
+    const props = this.plugin.store.props;
     const tasks = this.layout.filter((i) => i.kind === "task").map((i) => i.t);
     const known = new Set(this.plugin.store.tasks.map((x) => x.id));
     for (const id of [...this.selected]) if (!known.has(id)) this.selected.delete(id);
+    const cols = PROP_KEYS.filter((k) => k === "name" || props[k].visible);
+    const COLS = cols.length + 1;
     if (this.selected.size > 0) {
-      const bar = body.createDiv("rt-bulk");
-      bar.createSpan({ text: `${this.selected.size} selected` });
-      const del = bar.createEl("button", { cls: "mod-warning" });
-      (0, import_obsidian.setIcon)(del.createSpan(), "trash-2");
-      del.createSpan({ text: "Delete" });
+      const bar = body.createDiv("rt-selbar");
+      bar.createSpan({ cls: "rt-selbar-n", text: `${this.selected.size} selected` });
+      const del = bar.createEl("button", { cls: "clickable-icon rt-selbar-del", attr: { "aria-label": "Delete" } });
+      (0, import_obsidian.setIcon)(del, "trash-2");
       del.onclick = () => this.confirmDelete([...this.selected]);
-      const clear = bar.createEl("button", { text: "Clear" });
+      const more = bar.createEl("button", { cls: "clickable-icon", attr: { "aria-label": "More actions" } });
+      (0, import_obsidian.setIcon)(more, "more-horizontal");
+      more.onclick = (ev) => this.bulkMenu(ev, [...this.selected]);
+      const clear = bar.createEl("button", { cls: "clickable-icon", attr: { "aria-label": "Clear selection" } });
+      (0, import_obsidian.setIcon)(clear, "x");
       clear.onclick = () => {
         this.selected.clear();
         this.render();
       };
     }
-    const COLS = 10;
     const tbl = body.createEl("table", { cls: "rt-table" });
+    tbl.toggleClass("has-sel", this.selected.size > 0);
     const hr = tbl.createEl("thead").createEl("tr");
-    const all = hr.createEl("th", { cls: "rt-td-check" }).createEl("input", { cls: "rt-check", type: "checkbox", attr: { "aria-label": "Select all" } });
+    const all = hr.createEl("th", { cls: "rt-td-check" }).createEl("input", { cls: "rt-check rt-sel", type: "checkbox", attr: { "aria-label": "Select all" } });
     all.checked = tasks.length > 0 && tasks.every((x) => this.selected.has(x.id));
     all.onchange = () => {
       for (const x of tasks) {
@@ -841,7 +900,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       }
       this.render();
     };
-    for (const h of ["", "Name", "Status", "Start", "End", "Group", "Repeat", "Comes after", ""]) hr.createEl("th", { text: h });
+    for (const k of cols) hr.createEl("th", { text: props[k].label });
     const tb = tbl.createEl("tbody");
     const byId = new Map(this.plugin.store.tasks.map((x) => [x.id, x]));
     for (const item of this.layout) {
@@ -861,10 +920,9 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       }
       const t2 = item.t;
       const tr = tb.createEl("tr", { cls: "rt-tr" });
-      const isDone = this.isDone(t2);
-      tr.toggleClass("is-done", isDone);
+      tr.toggleClass("is-done", this.isDone(t2));
       tr.toggleClass("is-selected", this.selected.has(t2.id));
-      const sel = tr.createEl("td", { cls: "rt-td-check" }).createEl("input", { cls: "rt-check", type: "checkbox", attr: { "aria-label": "Select task" } });
+      const sel = tr.createEl("td", { cls: "rt-td-check" }).createEl("input", { cls: "rt-check rt-sel", type: "checkbox", attr: { "aria-label": "Select task" } });
       sel.checked = this.selected.has(t2.id);
       sel.onclick = (e) => e.stopPropagation();
       sel.onchange = () => {
@@ -872,28 +930,30 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
         else this.selected.delete(t2.id);
         this.render();
       };
-      const cb = tr.createEl("td", { cls: "rt-td-check" }).createEl("input", { cls: "rt-check", type: "checkbox", attr: { "aria-label": "Done" } });
-      cb.checked = isDone;
-      cb.onclick = (e) => e.stopPropagation();
-      cb.onchange = () => void this.toggleDone(t2, cb.checked);
-      const name = tr.createEl("td", { cls: "rt-td-name" });
-      name.createSpan({ cls: `rt-dot rt-c-${t2.color}` });
-      name.createSpan({ text: t2.title || "Untitled" });
-      tr.createEl("td", { text: this.statusOf(t2).name });
-      tr.createEl("td", { text: fmt(t2.start) });
-      tr.createEl("td", { text: fmt(t2.end) });
-      tr.createEl("td", { text: t2.group });
-      tr.createEl("td", { text: repeatLabel(t2) });
-      tr.createEl("td", {
-        text: t2.deps.map((id) => (byId.get(id) || { title: "" }).title).filter(Boolean).join(", ")
-      });
-      const trash = tr.createEl("td", { cls: "rt-td-trash" }).createEl("button", { cls: "clickable-icon", attr: { "aria-label": "Delete task" } });
-      (0, import_obsidian.setIcon)(trash, "trash-2");
-      trash.onclick = (e) => {
-        e.stopPropagation();
-        this.confirmDelete([t2.id]);
-      };
+      for (const k of cols) {
+        if (k === "name") {
+          const name = tr.createEl("td", { cls: "rt-td-name" });
+          name.createSpan({ cls: `rt-dot rt-c-${t2.color}` });
+          name.createSpan({ text: t2.title || "Untitled" });
+        } else if (k === "status") {
+          const st = this.statusOf(t2);
+          const chip = tr.createEl("td").createEl("button", { cls: "rt-status-chip", text: st.name });
+          chip.toggleClass("is-done", st.done);
+          chip.onclick = (e) => {
+            e.stopPropagation();
+            this.statusMenu(e, t2);
+          };
+        } else if (k === "start") tr.createEl("td", { text: fmt(t2.start) });
+        else if (k === "end") tr.createEl("td", { text: fmt(t2.end) });
+        else if (k === "group") tr.createEl("td", { text: t2.group });
+        else if (k === "repeat") tr.createEl("td", { text: repeatLabel(t2) });
+        else tr.createEl("td", { text: t2.deps.map((id) => (byId.get(id) || { title: "" }).title).filter(Boolean).join(", ") });
+      }
       tr.onclick = () => this.editTask(t2);
+      tr.oncontextmenu = (e) => {
+        e.preventDefault();
+        this.bulkMenu(e, this.selected.has(t2.id) ? [...this.selected] : [t2.id]);
+      };
     }
     if (this.layout.length === 0) {
       tb.createEl("tr").createEl("td", { cls: "rt-empty-cell", text: "No tasks match. Use New to add one.", attr: { colspan: String(COLS) } });
@@ -903,6 +963,61 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     (0, import_obsidian.setIcon)(addBtn.createSpan(), "plus");
     addBtn.createSpan({ text: "New" });
     addBtn.onclick = () => this.addTask();
+  }
+  statusMenu(ev, t) {
+    const menu = new import_obsidian.Menu();
+    const cur = this.statusOf(t).id;
+    for (const st of this.plugin.store.statuses) {
+      menu.addItem((i) => i.setTitle(st.name).setChecked(cur === st.id).onClick(() => void this.setStatusFor([t], st)));
+    }
+    menu.showAtMouseEvent(ev);
+  }
+  async setStatusFor(tasks, status) {
+    for (const x of tasks) withStatus(x, this.dayStr, status, this.plugin.store.statuses);
+    await this.plugin.save();
+  }
+  // The "..." menu for the selection bar (and right-click on a row), like Notion's.
+  bulkMenu(ev, ids) {
+    const tasks = this.plugin.store.tasks.filter((x) => ids.includes(x.id));
+    if (tasks.length === 0) return;
+    const props = this.plugin.store.props;
+    const menu = new import_obsidian.Menu();
+    for (const st of this.plugin.store.statuses) {
+      menu.addItem(
+        (i) => i.setTitle(`Mark as ${st.name}`).setIcon(st.done ? "check-circle-2" : "circle").onClick(() => void this.setStatusFor(tasks, st))
+      );
+    }
+    menu.addSeparator();
+    menu.addItem(
+      (i) => i.setTitle(`Edit ${props.group.label.toLowerCase()} & color\u2026`).setIcon("pencil").onClick(
+        () => new EditTasksModal(this.app(), tasks.length, this.plugin.groupNames(), props.group.label, async (group, color) => {
+          for (const x of tasks) {
+            if (group !== null) x.group = group;
+            if (color) x.color = color;
+          }
+          await this.plugin.save();
+        }).open()
+      )
+    );
+    menu.addItem((i) => i.setTitle("Duplicate").setIcon("copy").onClick(() => void this.duplicateTasks(tasks)));
+    menu.addSeparator();
+    menu.addItem((i) => i.setTitle("Delete").setIcon("trash-2").onClick(() => this.confirmDelete(ids)));
+    menu.showAtMouseEvent(ev);
+  }
+  async duplicateTasks(tasks) {
+    for (const x of tasks) {
+      this.plugin.store.tasks.push({
+        ...x,
+        id: uid(),
+        title: `${x.title || "Untitled"} (copy)`,
+        deps: [...x.deps],
+        days: x.days ? [...x.days] : null,
+        doneDates: [],
+        st: {}
+      });
+    }
+    this.selected.clear();
+    await this.plugin.save();
   }
   confirmDelete(ids) {
     const tasks = this.plugin.store.tasks.filter((x) => ids.includes(x.id));
@@ -1299,7 +1414,8 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
         }
         await this.plugin.save();
       },
-      this.plugin.store.statuses
+      this.plugin.store.statuses,
+      this.plugin.store.props
     ).open();
   }
   // New tasks join the view's group filter so they don't vanish right after being added.
@@ -1344,7 +1460,8 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
           new import_obsidian.Notice(`Added "${draft.title}", but this view only shows: ${g.join(", ")}. Its group is "${groupLabel(draft)}".`);
         }
       },
-      this.plugin.store.statuses
+      this.plugin.store.statuses,
+      this.plugin.store.props
     ).open();
   }
   app() {
@@ -1375,8 +1492,49 @@ var ConfirmModal = class extends import_obsidian.Modal {
     this.contentEl.empty();
   }
 };
+var EditTasksModal = class extends import_obsidian.Modal {
+  constructor(app, count, groups, groupLabelText, onApply) {
+    super(app);
+    this.count = count;
+    this.groups = groups;
+    this.groupLabelText = groupLabelText;
+    this.onApply = onApply;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    let group = null;
+    let color = "";
+    contentEl.createEl("h3", { text: `Edit ${this.count} ${this.count === 1 ? "task" : "tasks"}` });
+    const listId = "rt-bulk-groups";
+    new import_obsidian.Setting(contentEl).setName(this.groupLabelText).setDesc("Leave empty to keep each task's current value.").addText((t) => {
+      t.inputEl.setAttribute("list", listId);
+      t.setPlaceholder("e.g. Work").onChange((v) => group = v.trim() ? v.trim() : null);
+    });
+    const list = contentEl.createEl("datalist", { attr: { id: listId } });
+    for (const g of this.groups) list.createEl("option", { attr: { value: g } });
+    const row = new import_obsidian.Setting(contentEl).setName("Color");
+    const swatches = row.controlEl.createDiv("rt-swatches");
+    for (const c of COLORS) {
+      const b = swatches.createEl("button", { cls: `rt-swatch rt-c-${c}`, attr: { "aria-label": c } });
+      b.onclick = () => {
+        color = color === c ? "" : c;
+        swatches.querySelectorAll(".rt-swatch").forEach((x) => x.removeClass("is-on"));
+        if (color) b.addClass("is-on");
+      };
+    }
+    new import_obsidian.Setting(contentEl).addButton(
+      (b) => b.setButtonText("Apply").setCta().onClick(async () => {
+        this.close();
+        await this.onApply(group, color);
+      })
+    );
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
 var TaskModal = class extends import_obsidian.Modal {
-  constructor(app, draft, others, groups, dayStr, isNew, onDone, statuses) {
+  constructor(app, draft, others, groups, dayStr, isNew, onDone, statuses, props) {
     super(app);
     this.draft = draft;
     this.others = others;
@@ -1385,15 +1543,16 @@ var TaskModal = class extends import_obsidian.Modal {
     this.isNew = isNew;
     this.onDone = onDone;
     this.statuses = statuses;
+    this.props = props || defaultProps();
   }
   onOpen() {
     const { contentEl } = this;
     const d = this.draft;
     contentEl.createEl("h3", { text: this.isNew ? "New task" : "Edit task" });
-    new import_obsidian.Setting(contentEl).setName("Title").addText((t) => t.setValue(d.title).onChange((v) => d.title = v));
+    new import_obsidian.Setting(contentEl).setName(this.props.name.label).addText((t) => t.setValue(d.title).onChange((v) => d.title = v));
     let endInput = null;
     let endTouched = !this.isNew;
-    new import_obsidian.Setting(contentEl).setName("Start").addText((t) => {
+    new import_obsidian.Setting(contentEl).setName(this.props.start.label).addText((t) => {
       t.inputEl.type = "time";
       t.setValue(hhmm(d.start)).onChange((v) => {
         const m = parseHHMM(v);
@@ -1405,7 +1564,7 @@ var TaskModal = class extends import_obsidian.Modal {
         }
       });
     });
-    new import_obsidian.Setting(contentEl).setName("End").setDesc(this.isNew ? `Defaults to ${DEFAULT_LEN} minutes after the start.` : "").addText((t) => {
+    new import_obsidian.Setting(contentEl).setName(this.props.end.label).setDesc(this.isNew ? `Defaults to ${DEFAULT_LEN} minutes after the start.` : "").addText((t) => {
       endInput = t.inputEl;
       t.inputEl.type = "time";
       t.setValue(hhmm(d.end >= DAY ? DAY - 1 : d.end)).onChange((v) => {
@@ -1416,7 +1575,7 @@ var TaskModal = class extends import_obsidian.Modal {
       });
     });
     const listId = "rt-groups-list";
-    new import_obsidian.Setting(contentEl).setName("Group").addText((t) => {
+    new import_obsidian.Setting(contentEl).setName(this.props.group.label).addText((t) => {
       t.inputEl.setAttribute("list", listId);
       t.setPlaceholder("e.g. Work").setValue(d.group).onChange((v) => d.group = v.trim());
     });
@@ -1448,7 +1607,7 @@ var TaskModal = class extends import_obsidian.Modal {
         };
       });
     };
-    new import_obsidian.Setting(contentEl).setName("Repeat").setDesc("Repeating tasks keep one time slot. Ticking them off is tracked per day.").addDropdown((dd) => {
+    new import_obsidian.Setting(contentEl).setName(this.props.repeat.label).setDesc("Repeating tasks keep one time slot. Ticking them off is tracked per day.").addDropdown((dd) => {
       dd.addOption("none", "Does not repeat");
       dd.addOption("daily", "Every day");
       dd.addOption("weekly", "On specific days of the week");
@@ -1469,7 +1628,7 @@ var TaskModal = class extends import_obsidian.Modal {
     contentEl.appendChild(dayRow);
     drawDays();
     if (this.statuses && this.statuses.length) {
-      new import_obsidian.Setting(contentEl).setName("Status").setDesc(`For ${this.dayStr}.`).addDropdown((dd) => {
+      new import_obsidian.Setting(contentEl).setName(this.props.status.label).setDesc(`For ${this.dayStr}.`).addDropdown((dd) => {
         for (const s of this.statuses) dd.addOption(s.id, s.name);
         dd.setValue(statusOf(d, this.dayStr, this.statuses).id).onChange((v) => {
           const s = this.statuses.find((x) => x.id === v);
@@ -1492,7 +1651,7 @@ var TaskModal = class extends import_obsidian.Modal {
         };
       }
     };
-    new import_obsidian.Setting(contentEl).setName("Comes after").setDesc("Draws a connector from each chosen task into this one. You can also drag from a bar's end dot.").addDropdown((dd) => {
+    new import_obsidian.Setting(contentEl).setName(this.props.after.label).setDesc("Draws a connector from each chosen task into this one. You can also drag from a bar's end dot.").addDropdown((dd) => {
       dd.addOption("", "Add a task\u2026");
       for (const o of this.others) dd.addOption(o.id, o.title || "Untitled");
       dd.setValue("").onChange((v) => {

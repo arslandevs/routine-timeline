@@ -2,7 +2,7 @@
 
 A Notion-style timeline for your daily routine, inside Obsidian: colored task bars on an hour axis, groups and filters, drag-to-connect dependency arrows, and an inline block you can embed in any note.
 
-> **Status: early release (v0.6.0).** It renders correctly in a headless DOM smoke test across every layout and zoom, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
+> **Status: early release (v0.7.0).** It renders correctly in a headless DOM smoke test across every layout and zoom, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
 
 ## Install
 
@@ -18,12 +18,15 @@ Requires Obsidian 1.4.0 or newer. Works on desktop and mobile.
 ## Features
 
 - **Three layouts**: Table, Board and Timeline. Click the sliders icon (**View settings**) in the toolbar and pick one under **Layout**. Same tasks, same filters, different view
-  - **Table**: one row per task (select, done, name, status, start, end, group, repeat, comes after). Click a row to edit
-    - **Delete**: use the trash icon on a row, or tick the select boxes (or the header box for all) and press **Delete** in the bar that appears. You are asked to confirm first, and any arrows pointing at a deleted task are removed
+  - **Table**: one row per task. Click a row to edit it. Hover a row (or select any) to show its checkbox
+    - **Selecting**: tick one or more rows, or the header box for all. A floating bar shows **N selected**, a trash icon, a **⋯** menu and a clear button, like Notion. Right-click a row for the same menu
+    - **⋯ menu**: *Mark as* any status, *Edit group & color* for all selected, *Duplicate*, and *Delete*. Delete asks you to confirm and removes any arrows pointing at the deleted tasks
+    - **Status**: click a status chip in a row to change it
   - **Board**: always shows the status columns **Not started**, **In progress** and **Done**, even when a column is empty, and every column has its own **+ New** button
     - Click a column title to rename it (Enter saves, Escape cancels). The **⋯** menu renames or deletes a column, and **Add column** creates more. The Done column can be renamed but not deleted
     - Drag a card to another column, or pick the **Status** in the task editor (works on mobile). Ticking a task's checkbox moves it to Done, and unticking moves it back to the first column
     - Status is tracked per day, so a repeating task can be Done today and Not started tomorrow
+- **Rename and hide properties**: in **View settings → Properties**, rename Name, Status, Start, End, Group, Repeat and Comes after, and use the eye to hide a table column. The names apply to the table headers, the task editor and the group menu in every view
 - **Zoom dropdown** (Timeline): Hours, Day, Week, Bi-week, Month, Quarter, Year, 5 Years
   - **Day** fits all 24 hours in the view without scrolling. **Hours** zooms in so you can scroll through the day
   - **Week and larger** show one column per day. A repeating task appears only on the days it repeats: at its start time inside the day column in Week and Bi-week, and as a mark per day (consecutive days merge) in Month and larger. These views are read-only: click a bar to edit it
