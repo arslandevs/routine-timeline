@@ -1,13 +1,13 @@
 "use strict";
-var __defProp = Object.defineProperty;
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-var __getOwnPropNames = Object.getOwnPropertyNames;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __export = (target, all) => {
+const __defProp = Object.defineProperty;
+const __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+const __getOwnPropNames = Object.getOwnPropertyNames;
+const __hasOwnProp = Object.prototype.hasOwnProperty;
+const __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
 };
-var __copyProps = (to, from, except, desc) => {
+const __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
     for (let key of __getOwnPropNames(from))
       if (!__hasOwnProp.call(to, key) && key !== except)
@@ -15,50 +15,50 @@ var __copyProps = (to, from, except, desc) => {
   }
   return to;
 };
-var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+const __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // main.ts
-var main_exports = {};
+const main_exports = {};
 __export(main_exports, {
   default: () => RoutineTimelinePlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian = require("obsidian");
-var VIEW_TYPE = "routine-timeline";
-var HOURS_W = 140;
-var MIN_HOUR_W = 22;
-var ROW_H = 44;
-var HEAD_H = 34;
-var SNAP = 15;
-var DAY = 1440;
-var SVG_NS = "http://www.w3.org/2000/svg";
-var COLORS = ["gray", "brown", "orange", "yellow", "green", "blue", "purple", "pink", "red"];
-var ZOOMS = ["hours", "day", "week", "biweek", "month", "quarter", "year", "5years"];
-var ZOOM_LABEL = { hours: "Hours", day: "Day", week: "Week", biweek: "Bi-week", month: "Month", quarter: "Quarter", year: "Year", "5years": "5 Years" };
-var ZOOM_MIN_DAY_W = { week: 90, biweek: 56, month: 28, quarter: 8, year: 2.4, "5years": 0.7 };
-var LAYOUTS = ["table", "board", "timeline", "calendar"];
-var LAYOUT_LABEL = { table: "Table", board: "Board", timeline: "Timeline", calendar: "Calendar" };
-var CAL_VIEWS = ["day", "week", "month"];
-var CAL_LABEL = { day: "Day", week: "Week", month: "Month" };
-var HOUR_H = 44;
-var LAYOUT_ICON = { table: "table", board: "layout-dashboard", timeline: "gantt-chart", calendar: "calendar" };
-var uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-var pad = (n) => String(n).padStart(2, "0");
-var ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-var clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
-var hhmm = (m) => `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
-var parseHHMM = (s) => {
+const import_obsidian = require("obsidian");
+const VIEW_TYPE = "routine-timeline";
+const HOURS_W = 140;
+const MIN_HOUR_W = 22;
+const ROW_H = 44;
+const HEAD_H = 34;
+const SNAP = 15;
+const DAY = 1440;
+const SVG_NS = "http://www.w3.org/2000/svg";
+const COLORS = ["gray", "brown", "orange", "yellow", "green", "blue", "purple", "pink", "red"];
+const ZOOMS = ["hours", "day", "week", "biweek", "month", "quarter", "year", "5years"];
+const ZOOM_LABEL = { hours: "Hours", day: "Day", week: "Week", biweek: "Bi-week", month: "Month", quarter: "Quarter", year: "Year", "5years": "5 Years" };
+const ZOOM_MIN_DAY_W = { week: 90, biweek: 56, month: 28, quarter: 8, year: 2.4, "5years": 0.7 };
+const LAYOUTS = ["table", "board", "timeline", "calendar"];
+const LAYOUT_LABEL = { table: "Table", board: "Board", timeline: "Timeline", calendar: "Calendar" };
+const CAL_VIEWS = ["day", "week", "month"];
+const CAL_LABEL = { day: "Day", week: "Week", month: "Month" };
+const HOUR_H = 44;
+const LAYOUT_ICON = { table: "table", board: "layout-dashboard", timeline: "gantt-chart", calendar: "calendar" };
+const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+const pad = (n) => String(n).padStart(2, "0");
+const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+const hhmm = (m) => `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
+const parseHHMM = (s) => {
   if (!s) return null;
   const [h, m] = s.split(":").map(Number);
   return Number.isNaN(h) || Number.isNaN(m) ? null : h * 60 + m;
 };
-var hourLabel = (h) => `${h % 12 || 12} ${h < 12 ? "AM" : "PM"}`;
-var hourLabelShort = (h) => `${h % 12 || 12}${h < 12 ? "a" : "p"}`;
-var dayIndex = (d, start) => Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - start.getTime()) / 864e5);
-var DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-var DEFAULT_LEN = 25;
-var nthCache = /* @__PURE__ */ new Map();
-var effUntil = (t) => {
+const hourLabel = (h) => `${h % 12 || 12} ${h < 12 ? "AM" : "PM"}`;
+const hourLabelShort = (h) => `${h % 12 || 12}${h < 12 ? "a" : "p"}`;
+const dayIndex = (d, start) => Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - start.getTime()) / 864e5);
+const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DEFAULT_LEN = 25;
+const nthCache = /* @__PURE__ */ new Map();
+const effUntil = (t) => {
   if (!t.count || !t.from) return t.until || null;
   const sig = `${t.from}|${(t.days || []).join("")}|${t.count}`;
   const hit = nthCache.get(t.id);
@@ -79,7 +79,7 @@ var effUntil = (t) => {
   }
   return last && t.until ? last < t.until ? last : t.until : last || t.until || null;
 };
-var occurs = (t, d) => {
+const occurs = (t, d) => {
   if (t.date !== null) return t.date === ymd(d);
   if (t.days && !t.days.includes(d.getDay())) return false;
   const s = ymd(d);
@@ -87,28 +87,28 @@ var occurs = (t, d) => {
   const u = effUntil(t);
   return !(u && s > u);
 };
-var repeatLabel = (t) => {
+const repeatLabel = (t) => {
   if (t.date !== null) return "Once";
   const base = !t.days || t.days.length === 7 ? "Every day" : [...t.days].sort((a, b) => a - b).map((n) => DOW[n]).join(", ");
   const end = t.count ? `, ${t.count}\xD7` : t.until ? `, until ${t.until}` : "";
   return base + end;
 };
-var STATUS_COLORS = { "not-started": "gray", "in-progress": "blue", done: "green" };
-var EXTRA_STATUS_COLORS = ["purple", "orange", "pink", "yellow", "brown", "red"];
-var defaultStatuses = () => [
+const STATUS_COLORS = { "not-started": "gray", "in-progress": "blue", done: "green" };
+const EXTRA_STATUS_COLORS = ["purple", "orange", "pink", "yellow", "brown", "red"];
+const defaultStatuses = () => [
   { id: "not-started", name: "Not started", done: false, color: "gray" },
   { id: "in-progress", name: "In progress", done: false, color: "blue" },
   { id: "done", name: "Done", done: true, color: "green" }
 ];
-var cleanStatuses = (v) => {
+const cleanStatuses = (v) => {
   const seen = /* @__PURE__ */ new Set();
   const list = Array.isArray(v) ? v.filter((s) => s && typeof s.id === "string" && typeof s.name === "string" && s.name.trim() && !seen.has(s.id) && seen.add(s.id)).map((s, i) => ({ id: s.id, name: s.name.trim(), done: !!s.done, color: COLORS.includes(s.color) ? s.color : STATUS_COLORS[s.id] || EXTRA_STATUS_COLORS[i % EXTRA_STATUS_COLORS.length] })) : [];
   if (list.length === 0) return defaultStatuses();
   if (!list.some((s) => s.done)) list[list.length - 1].done = true;
   return list;
 };
-var PROP_KEYS = ["name", "status", "date", "start", "end", "duration", "group", "repeat", "after"];
-var defaultProps = () => ({
+const PROP_KEYS = ["name", "status", "date", "start", "end", "duration", "group", "repeat", "after"];
+const defaultProps = () => ({
   name: { label: "Name", visible: true },
   status: { label: "Status", visible: true },
   date: { label: "Date", visible: true },
@@ -119,9 +119,9 @@ var defaultProps = () => ({
   repeat: { label: "Repeat", visible: true },
   after: { label: "Comes after", visible: true }
 });
-var CUSTOM_TYPES = ["text", "number", "checkbox", "select", "date"];
-var CUSTOM_LABEL = { text: "Text", number: "Number", checkbox: "Checkbox", select: "Select", date: "Date" };
-var cleanProps = (v, order) => {
+const CUSTOM_TYPES = ["text", "number", "checkbox", "select", "date"];
+const CUSTOM_LABEL = { text: "Text", number: "Number", checkbox: "Checkbox", select: "Select", date: "Date" };
+const cleanProps = (v, order) => {
   const props = defaultProps();
   if (v && typeof v === "object") {
     for (const k of Object.keys(v)) {
@@ -147,37 +147,37 @@ var cleanProps = (v, order) => {
   }
   return { props, order: list };
 };
-var doneStatus = (sts) => sts.find((s) => s.done) || sts[sts.length - 1];
-var statusOf = (t, date, sts) => {
+const doneStatus = (sts) => sts.find((s) => s.done) || sts[sts.length - 1];
+const statusOf = (t, date, sts) => {
   const id = t.st && t.st[date];
   const hit = id ? sts.find((s) => s.id === id) : null;
   if (hit) return hit;
   return t.doneDates.includes(date) ? doneStatus(sts) : sts[0];
 };
-var withStatus = (t, date, status, sts) => {
+const withStatus = (t, date, status, sts) => {
   t.st = { ...t.st || {}, [date]: status.id };
   const done = status.done;
   t.doneDates = done ? t.doneDates.includes(date) ? t.doneDates : [...t.doneDates, date] : t.doneDates.filter((d) => d !== date);
 };
-var cleanDays = (v) => {
+const cleanDays = (v) => {
   const days = Array.isArray(v) ? [...new Set(v.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6))] : [];
   return days.length > 0 && days.length < 7 ? days : null;
 };
-var parseYmd = (s) => {
+const parseYmd = (s) => {
   const [y, m, d] = s.split("-").map(Number);
   return new Date(y, m - 1, d);
 };
-var fmt = (min) => {
+const fmt = (min) => {
   const h = Math.floor(min / 60) % 24;
   return `${h % 12 || 12}:${pad(min % 60)} ${h < 12 ? "AM" : "PM"}`;
 };
-var groupLabel = (t) => t.group || "No group";
-var curve = (x1, y1, x2, y2) => {
+const groupLabel = (t) => t.group || "No group";
+const curve = (x1, y1, x2, y2) => {
   const dx = Math.max(24, Math.abs(x2 - x1) * 0.5);
   return `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`;
 };
-var defaultUi = () => ({ groupBy: "none", hideDone: false, groups: [], layout: "timeline", zoom: "day", cal: "month", sidebar: true, showTasks: true });
-var cleanView = (v, fallbackName) => ({
+const defaultUi = () => ({ groupBy: "none", hideDone: false, groups: [], layout: "timeline", zoom: "day", cal: "month", sidebar: true, showTasks: true });
+const cleanView = (v, fallbackName) => ({
   id: typeof v.id === "string" && v.id ? v.id : uid(),
   name: typeof v.name === "string" && v.name.trim() ? v.name.trim() : fallbackName || "View",
   layout: LAYOUTS.includes(v.layout) ? v.layout : "timeline",
@@ -189,14 +189,14 @@ var cleanView = (v, fallbackName) => ({
   sidebar: v.sidebar !== false,
   showTasks: v.showTasks !== false
 });
-var cleanFeeds = (v) => Array.isArray(v) ? v.filter((f) => f && typeof f.url === "string" && f.url.trim()).map((f) => ({
+const cleanFeeds = (v) => Array.isArray(v) ? v.filter((f) => f && typeof f.url === "string" && f.url.trim()).map((f) => ({
   id: typeof f.id === "string" && f.id ? f.id : uid(),
   name: typeof f.name === "string" && f.name.trim() ? f.name.trim() : "Calendar",
   url: f.url.trim(),
   color: COLORS.includes(f.color) ? f.color : "green",
   visible: f.visible !== false
 })) : [];
-var defaultStore = (tasks) => {
+const defaultStore = (tasks) => {
   const v = cleanView({ name: "Default view" }, "Default view");
   return { tasks, views: [v], activeView: v.id, statuses: defaultStatuses(), props: defaultProps(), propOrder: [...PROP_KEYS], feeds: [] };
 };
@@ -265,8 +265,8 @@ function parseOpts(src) {
   return o;
 }
 // ---- iCalendar (.ics) parsing and recurrence expansion for read-only calendar feeds
-var icsUnfold = (text) => text.replace(/\r?\n[ \t]/g, "").split(/\r?\n/);
-var icsText = (s) => s.replace(/\\[nN]/g, "\n").replace(/\\,/g, ",").replace(/\\;/g, ";").replace(/\\\\/g, "\\");
+const icsUnfold = (text) => text.replace(/\r?\n[ \t]/g, "").split(/\r?\n/);
+const icsText = (s) => s.replace(/\\[nN]/g, "\n").replace(/\\,/g, ",").replace(/\\;/g, ";").replace(/\\\\/g, "\\");
 function icsSplit(line) {
   let q = false;
   let colon = -1;
@@ -359,7 +359,7 @@ function parseIcs(text) {
   }
   return events;
 }
-var WD = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
+const WD = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
 function icsDurationMs(s) {
   const m = /^P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(s || "");
   if (!m) return 0;
@@ -385,13 +385,13 @@ function parseRule(str) {
   }
   return r;
 }
-var DAY_MS = 864e5;
-var utcDay = (y, m, d) => Math.floor(Date.UTC(y, m - 1, d) / DAY_MS);
-var dayToYmd = (n) => {
+const DAY_MS = 864e5;
+const utcDay = (y, m, d) => Math.floor(Date.UTC(y, m - 1, d) / DAY_MS);
+const dayToYmd = (n) => {
   const d = new Date(n * DAY_MS);
   return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate() };
 };
-var dowOfDay = (n) => (n % 7 + 11) % 7;
+const dowOfDay = (n) => (n % 7 + 11) % 7;
 function monthDays(y, m) {
   return new Date(Date.UTC(y, m, 0)).getUTCDate();
 }
@@ -510,7 +510,7 @@ function expandIcs(events, fromMs, toMs) {
   return out.sort((a, b) => a.start - b.start);
 }
 
-var RoutineTimelinePlugin = class extends import_obsidian.Plugin {
+const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
   constructor() {
     super(...arguments);
     this.store = defaultStore([]);
@@ -527,15 +527,15 @@ var RoutineTimelinePlugin = class extends import_obsidian.Plugin {
       await this.saveData(this.store);
     }
     this.registerView(VIEW_TYPE, (leaf) => new TimelineView(leaf, this));
-    this.addRibbonIcon("gantt-chart", "Open routine timeline", () => void this.openView());
+    this.addRibbonIcon("gantt-chart", "Open timeline view", () => void this.openView());
     this.addCommand({
-      id: "open-routine-timeline",
-      name: "Open routine timeline",
+      id: "open-view",
+      name: "Open timeline view",
       callback: () => void this.openView()
     });
     this.addCommand({
-      id: "insert-routine-timeline",
-      name: "Insert routine timeline into note",
+      id: "insert-block",
+      name: "Insert timeline into note",
       editorCallback: (editor) => editor.replaceSelection("```routine-timeline\n```\n")
     });
     this.registerMarkdownCodeBlockProcessor("routine-timeline", (source, el, ctx) => {
@@ -683,7 +683,7 @@ var RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     for (const b of this.boards) b.render();
   }
 };
-var TimelineView = class extends import_obsidian.ItemView {
+const TimelineView = class extends import_obsidian.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -711,7 +711,7 @@ var TimelineView = class extends import_obsidian.ItemView {
     }
   }
 };
-var BoardChild = class extends import_obsidian.MarkdownRenderChild {
+const BoardChild = class extends import_obsidian.MarkdownRenderChild {
   constructor(el, plugin, o) {
     super(el);
     this.plugin = plugin;
@@ -742,7 +742,7 @@ var BoardChild = class extends import_obsidian.MarkdownRenderChild {
     }
   }
 };
-var TimelineBoard = class {
+const TimelineBoard = class {
   constructor(plugin, host, opts, ui) {
     this.plugin = plugin;
     this.host = host;
@@ -2796,7 +2796,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
     return this.plugin.app;
   }
 };
-var AddFeedModal = class extends import_obsidian.Modal {
+const AddFeedModal = class extends import_obsidian.Modal {
   constructor(app, onAdd) {
     super(app);
     this.onAdd = onAdd;
@@ -2839,7 +2839,7 @@ var AddFeedModal = class extends import_obsidian.Modal {
     this.contentEl.empty();
   }
 };
-var ColorPickModal = class extends import_obsidian.Modal {
+const ColorPickModal = class extends import_obsidian.Modal {
   constructor(app, title, current, onPick) {
     super(app);
     this.title = title;
@@ -2863,7 +2863,7 @@ var ColorPickModal = class extends import_obsidian.Modal {
     this.contentEl.empty();
   }
 };
-var EventModal = class extends import_obsidian.Modal {
+const EventModal = class extends import_obsidian.Modal {
   constructor(app, ev) {
     super(app);
     this.ev = ev;
@@ -2888,7 +2888,7 @@ var EventModal = class extends import_obsidian.Modal {
     this.contentEl.empty();
   }
 };
-var RoutineSettingTab = class extends import_obsidian.PluginSettingTab {
+const RoutineSettingTab = class extends import_obsidian.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -2896,8 +2896,6 @@ var RoutineSettingTab = class extends import_obsidian.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "Routine Timeline" });
-    containerEl.createEl("h3", { text: "Calendars" });
     containerEl.createEl("p", {
       cls: "setting-item-description",
       text: "Show Google Calendar events (or any .ics feed) in the Calendar layout. In Google Calendar open Settings, pick a calendar and copy its Secret address in iCal format. It is read-only, refreshes every 30 minutes, and Google itself updates the feed every few hours. Treat the address like a password: it is saved in this plugin's data file."
@@ -2924,7 +2922,7 @@ var RoutineSettingTab = class extends import_obsidian.PluginSettingTab {
     }));
   }
 };
-var ConfirmModal = class extends import_obsidian.Modal {
+const ConfirmModal = class extends import_obsidian.Modal {
   constructor(app, title, message, onConfirm) {
     super(app);
     this.title = title;
@@ -2948,7 +2946,7 @@ var ConfirmModal = class extends import_obsidian.Modal {
     this.contentEl.empty();
   }
 };
-var EditTasksModal = class extends import_obsidian.Modal {
+const EditTasksModal = class extends import_obsidian.Modal {
   constructor(app, count, groups, groupLabelText, onApply) {
     super(app);
     this.count = count;
@@ -2989,7 +2987,7 @@ var EditTasksModal = class extends import_obsidian.Modal {
     this.contentEl.empty();
   }
 };
-var TaskModal = class extends import_obsidian.Modal {
+const TaskModal = class extends import_obsidian.Modal {
   constructor(app, draft, others, groups, dayStr, isNew, onDone, statuses, props, extra) {
     super(app);
     this.draft = draft;

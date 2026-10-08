@@ -1,9 +1,10 @@
 {
   "id": "routine-timeline",
   "name": "Routine Timeline",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "minAppVersion": "1.4.0",
-  "description": "A Notion-style timeline for your daily routine: colored task bars, groups and filters, drag-to-connect arrows, and an inline note block.",
+  "description": "Plan tasks and routines with Table, Board, Timeline and Calendar views, saved view tabs, repeating tasks, notes, and read-only Google Calendar events.",
   "author": "Arsalan",
-  "isDesktopOnly": false
+  "isDesktopOnly": false,
+  "authorUrl": "https://github.com/arslandevs"
 }

@@ -2,7 +2,7 @@
 
 A Notion-style task and routine planner for Obsidian. One set of tasks, four layouts (Table, Board, Timeline, Calendar), saved views in a tab bar, repeating tasks, a Google Calendar feed, and an inline block you can drop into any note.
 
-> **Status: early release (v0.11.0).** Every layout, zoom, editor and menu is covered by a headless DOM test, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
+> **Status: early release (v0.11.1).** Every layout, zoom, editor and menu is covered by a headless DOM test, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
 
 ## Install
 
@@ -11,7 +11,7 @@ A Notion-style task and routine planner for Obsidian. One set of tasks, four lay
 1. Open the [latest release](https://github.com/arslandevs/routine-timeline/releases/latest) and download `main.js`, `manifest.json` and `styles.css`
 2. Put the three files in `<your vault>/.obsidian/plugins/routine-timeline/` (create the folder if needed)
 3. In Obsidian, go to **Settings → Community plugins** and enable **Routine Timeline**
-4. Open it from the ribbon icon, or run the command **Open routine timeline**
+4. Open it from the ribbon icon, or run the command **Open timeline view**
 
 ### With BRAT (auto-updates)
 
@@ -99,7 +99,7 @@ A search box, a Filter menu (hide completed, pick groups) and a Group menu (none
 
 ## Embed in a note
 
-Run the command **Insert routine timeline into note**, or type a code block with the language `routine-timeline`:
+Run the command **Insert timeline into note**, or type a code block with the language `routine-timeline`:
 
 ````markdown
 ```routine-timeline
