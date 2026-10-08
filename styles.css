@@ -1480,3 +1480,20 @@
 .rt-chip-sm {
 	border: 1px solid var(--rt-line);
 }
+
+/* Drag to reorder tabs and table columns */
+.rt-tab[draggable="true"],
+.rt-table th[draggable="true"] {
+	cursor: grab;
+}
+.is-dragging {
+	opacity: 0.45;
+}
+.rt-tab.is-drop-before,
+.rt-table th.is-drop-before {
+	box-shadow: inset 3px 0 0 var(--interactive-accent);
+}
+.rt-tab.is-drop-after,
+.rt-table th.is-drop-after {
+	box-shadow: inset -3px 0 0 var(--interactive-accent);
+}

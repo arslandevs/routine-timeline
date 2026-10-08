@@ -586,6 +586,30 @@ var RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     for (const b of this.boards) if (b.embedViewId === id) b.embedViewId = null;
     await this.save();
   }
+  async moveView(id, targetId, after) {
+    const vs = this.store.views;
+    const from = vs.findIndex((v) => v.id === id);
+    if (from < 0 || id === targetId) return;
+    const [m] = vs.splice(from, 1);
+    let to = vs.findIndex((v) => v.id === targetId);
+    if (to < 0) to = vs.length;
+    vs.splice(after ? to + 1 : to, 0, m);
+    await this.save();
+  }
+  // Move a table column (property) before or after another; Name always stays first.
+  async moveProp(key, targetKey, after) {
+    if (key === "name" || key === targetKey) return;
+    const order = this.store.propOrder;
+    const from = order.indexOf(key);
+    if (from < 0) return;
+    order.splice(from, 1);
+    let to = order.indexOf(targetKey);
+    if (to < 0) to = order.length;
+    let at = after ? to + 1 : to;
+    if (at < 1) at = 1;
+    order.splice(at, 0, key);
+    await this.save();
+  }
   async renameView(id, name) {
     const v = this.store.views.find((x) => x.id === id);
     const n = name.trim();
@@ -746,6 +770,7 @@ var TimelineBoard = class {
     this.offPanel = null;
     this.renameId = null;
     this.renameViewId = null;
+    this.dragKind = null;
     this.embedViewId = null;
     this.peekId = null;
     this.peekDraft = null;
@@ -1102,6 +1127,7 @@ var TimelineBoard = class {
       } else {
         tab.createSpan({ cls: "rt-tab-name", text: v.name });
       }
+      if (this.renameViewId !== v.id) this.makeSortable(tab, "view", v.id, (dragged, after) => void this.plugin.moveView(dragged, v.id, after));
       tab.onclick = (e) => {
         if (this.renameViewId) return;
         if (v.id === activeId) this.viewMenu(e, v, true);
@@ -1131,6 +1157,49 @@ var TimelineBoard = class {
       }
       menu.showAtMouseEvent(ev);
     };
+  }
+  // Drag to reorder: wires drag events on an element; `onDrop(after)` runs when something of `kind` is dropped on it.
+  makeSortable(el, kind, id, onDrop) {
+    el.draggable = true;
+    el.addEventListener("dragstart", (e) => {
+      this.dragKind = kind;
+      if (e.dataTransfer) {
+        e.dataTransfer.setData("text/plain", `${kind}:${id}`);
+        e.dataTransfer.effectAllowed = "move";
+      }
+      el.addClass("is-dragging");
+    });
+    const clear = () => {
+      el.removeClass("is-drop-before");
+      el.removeClass("is-drop-after");
+    };
+    el.addEventListener("dragend", () => {
+      this.dragKind = null;
+      el.removeClass("is-dragging");
+      this.host.querySelectorAll(".is-drop-before, .is-drop-after").forEach((x) => {
+        x.removeClass("is-drop-before");
+        x.removeClass("is-drop-after");
+      });
+    });
+    el.addEventListener("dragover", (e) => {
+      if (this.dragKind !== kind) return;
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      const after = e.clientX > r.left + r.width / 2;
+      el.toggleClass("is-drop-before", !after);
+      el.toggleClass("is-drop-after", after);
+    });
+    el.addEventListener("dragleave", clear);
+    el.addEventListener("drop", (e) => {
+      if (this.dragKind !== kind) return;
+      e.preventDefault();
+      const data = e.dataTransfer ? e.dataTransfer.getData("text/plain") : "";
+      const r = el.getBoundingClientRect();
+      const after = e.clientX > r.left + r.width / 2;
+      clear();
+      const dragged = data.startsWith(`${kind}:`) ? data.slice(kind.length + 1) : "";
+      if (dragged && dragged !== id) onDrop(dragged, after);
+    });
   }
   // Inside a note, a tab copies that saved view's settings into this block.
   adoptView(v) {
@@ -1836,7 +1905,25 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       }
       this.render();
     };
-    for (const k of cols) hr.createEl("th", { text: props[k].label });
+    for (const k of cols) {
+      const th = hr.createEl("th", { text: props[k].label });
+      if (k !== "name") this.makeSortable(th, "col", k, (dragged, after) => void this.plugin.moveProp(dragged, k, after));
+      else th.addEventListener("dragover", (e) => {
+        if (this.dragKind !== "col") return;
+        e.preventDefault();
+        th.addClass("is-drop-after");
+      });
+      if (k === "name") {
+        th.addEventListener("dragleave", () => th.removeClass("is-drop-after"));
+        th.addEventListener("drop", (e) => {
+          if (this.dragKind !== "col") return;
+          e.preventDefault();
+          th.removeClass("is-drop-after");
+          const data = e.dataTransfer ? e.dataTransfer.getData("text/plain") : "";
+          if (data.startsWith("col:")) void this.plugin.moveProp(data.slice(4), "name", true);
+        });
+      }
+    }
     const tb = tbl.createEl("tbody");
     const byId = new Map(this.plugin.store.tasks.map((x) => [x.id, x]));
     for (const item of this.layout) {

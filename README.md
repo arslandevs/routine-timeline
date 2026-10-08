@@ -2,7 +2,7 @@
 
 A Notion-style timeline for your daily routine, inside Obsidian: colored task bars on an hour axis, groups and filters, drag-to-connect dependency arrows, and an inline block you can embed in any note.
 
-> **Status: early release (v0.10.2).** It renders correctly in a headless DOM smoke test across every layout and zoom, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
+> **Status: early release (v0.11.0).** It renders correctly in a headless DOM smoke test across every layout and zoom, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
 
 ## Install
 
@@ -17,9 +17,9 @@ Requires Obsidian 1.4.0 or newer. Works on desktop and mobile.
 
 ## Features
 
-- **View tabs** across the top, like Notion (also inside a note: click a tab to use that view's settings in the block). Click the active tab for its menu: Rename, Display as (Table, Board, Timeline, Calendar), Edit view, Duplicate view, Delete view. Also: *Default view | Timeline | … | +*. Click a tab to switch, **+** to add a Table, Board, Timeline or Calendar view, double-click a tab to rename it, right-click for Rename, Duplicate and Delete. Each view keeps its own layout, zoom, filters and grouping. **View settings → Layout** changes the layout of the current view
+- **View tabs** across the top, like Notion (also inside a note: click a tab to use that view's settings in the block). Click the active tab for its menu: Rename, Display as (Table, Board, Timeline, Calendar), Edit view, Duplicate view, Delete view. Also: *Default view | Timeline | … | +*. Click a tab to switch, **+** to add a Table, Board, Timeline or Calendar view, double-click a tab to rename it, right-click for Rename, Duplicate and Delete. **Drag a tab left or right to reorder the tabs.** Each view keeps its own layout, zoom, filters and grouping. **View settings → Layout** changes the layout of the current view
 - **Four layouts**: Table, Board, Timeline and Calendar. Same tasks, same filters, different view
-  - **Table**: edit like a spreadsheet. Click a cell to select it, then just **type** to replace its value (or press **Enter** or double-click to edit), **Enter** saves, **Esc** cancels, arrow keys move between cells. Status is a chip you click. Hover a row's name to show **OPEN**, which opens the task in a side panel with all its fields and a **Notes** box. Click anywhere outside the panel to close it; valid edits are saved automatically Hover a row (or select any) to show its checkbox
+  - **Table**: edit like a spreadsheet. Click a cell to select it, then just **type** to replace its value (or press **Enter** or double-click to edit), **Enter** saves, **Esc** cancels, arrow keys move between cells. **Drag a column header to move that column** (a blue line shows where it will land; Name always stays first). The order is shared with View settings → Properties. Status is a chip you click. Hover a row's name to show **OPEN**, which opens the task in a side panel with all its fields and a **Notes** box. Click anywhere outside the panel to close it; valid edits are saved automatically Hover a row (or select any) to show its checkbox
     - **Selecting**: tick one or more rows, or the header box for all. A floating bar shows **N selected**, a trash icon, a **⋯** menu and a clear button, like Notion. Right-click a row for the same menu
     - **⋯ menu**: *Mark as* any status, *Edit group & color* for all selected, *Duplicate*, and *Delete*. Delete asks you to confirm and removes any arrows pointing at the deleted tasks
     - **Status**: click a status chip in a row to change it
@@ -102,7 +102,7 @@ The secret iCal address of a calendar lets anyone who has it read that calendar.
 - Repeats are every day or chosen weekdays, with an optional start, count or end date. There is no monthly repeat or per-day exception yet
 - In Week view a short bar is stretched to a readable minimum width, but it always starts at the task's start time. Bars late in the evening are cut at the end of the day column
 - Week, Bi-week, Month, Quarter, Year and 5 Years zooms are read-only, and dependency arrows are only drawn in Hours and Day
-- Board drag and drop uses the browser's drag events, so it works on desktop but not by touch (use the checkbox or the Status field in the editor on mobile)
+- Dragging tabs, table columns and board cards uses the browser's drag events, so it works on desktop. On mobile, reorder properties with the arrows in View settings. Board drag and drop uses the browser's drag events, so it works on desktop but not by touch (use the checkbox or the Status field in the editor on mobile)
 - The Group menu does not apply to the Board layout, which always groups by status
 - No ← → buttons for bars outside the visible area (the current-time line, dragging and resizing cover most of that)
 - Inline embedding in Live Preview is the least tested part
