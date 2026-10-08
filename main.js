@@ -741,6 +741,8 @@ var TimelineBoard = class {
     this.renameId = null;
     this.renameViewId = null;
     this.calTop = null;
+    this.calLeft = 0;
+    this.calNow = null;
     this.reopenPanel = false;
     this.settingsBtn = null;
     this.selected = /* @__PURE__ */ new Set();
@@ -902,7 +904,11 @@ var TimelineBoard = class {
     const refocus = !!search && document.activeElement === search;
     const caret = (_a = search == null ? void 0 : search.selectionStart) != null ? _a : 0;
     const calScroll = host.querySelector(".rt-cal-scroll");
-    if (calScroll) this.calTop = calScroll.scrollTop;
+    if (calScroll) {
+      this.calTop = calScroll.scrollTop;
+      this.calLeft = calScroll.scrollLeft;
+    }
+    this.calNow = null;
     if (!this.opts.embedded) this.ui = this.plugin.activeView();
     const prev = host.querySelector(".rt-scroll, .rt-body");
     const prevLeft = (_c = prev == null ? void 0 : prev.scrollLeft) != null ? _c : 0;
@@ -1572,11 +1578,14 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
   renderWeekGrid(main, range, events) {
     const cols = range.n;
     const wrap = main.createDiv("rt-week");
-    wrap.style.setProperty("--rt-cols", String(cols));
+    const scroll = wrap.createDiv("rt-cal-scroll");
+    const inner = scroll.createDiv("rt-week-inner");
+    inner.style.setProperty("--rt-cols", String(cols));
+    if (cols > 1) inner.style.minWidth = `${48 + cols * 150}px`;
     const today = ymd(/* @__PURE__ */ new Date());
     const days = [];
     for (let i = 0; i < cols; i++) days.push(this.dayAt(range, i));
-    const head = wrap.createDiv("rt-week-head");
+    const head = inner.createDiv("rt-week-head");
     head.createDiv("rt-week-gutter");
     for (const date of days) {
       const h = head.createDiv("rt-week-day");
@@ -1592,15 +1601,14 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     }
     const perDay = days.map((d) => this.calItems(d, events));
     if (perDay.some((l) => l.some((i) => i.allDay))) {
-      const ad = wrap.createDiv("rt-week-allday");
+      const ad = inner.createDiv("rt-week-allday");
       ad.createDiv({ cls: "rt-week-gutter", text: "all-day" });
       days.forEach((date, i) => {
         const cell = ad.createDiv("rt-week-adcell");
         for (const it of perDay[i].filter((x) => x.allDay)) this.chip(cell, it, date);
       });
     }
-    const scroll = wrap.createDiv("rt-cal-scroll");
-    const bodyEl = scroll.createDiv("rt-week-body");
+    const bodyEl = inner.createDiv("rt-week-body");
     bodyEl.style.height = `${24 * HOUR_H}px`;
     const gut = bodyEl.createDiv("rt-week-gutter rt-week-hours");
     for (let h = 1; h < 24; h++) {
@@ -1646,15 +1654,30 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
         el.style.left = `calc(${it.lane / it.cols * 100}% + 1px)`;
         el.style.width = `calc(${100 / it.cols}% - 3px)`;
       }
-      if (ymd(date) === today) {
-        const now = /* @__PURE__ */ new Date();
-        const line = col.createDiv("rt-week-now");
-        line.style.top = `${(now.getHours() * 60 + now.getMinutes()) / 60 * HOUR_H}px`;
-      }
     });
+    const todayIdx = days.findIndex((d) => ymd(d) === today);
+    this.calNow = null;
+    if (todayIdx >= 0) {
+      const line = bodyEl.createDiv("rt-week-nowline");
+      const label = gut.createDiv("rt-week-nowlabel");
+      const bold = bodyEl.querySelectorAll(".rt-week-col")[todayIdx].createDiv("rt-week-now");
+      this.calNow = { line, label, bold };
+      this.updateCalNow();
+    }
     window.requestAnimationFrame(() => {
       scroll.scrollTop = this.calTop !== null ? this.calTop : 7 * HOUR_H;
+      scroll.scrollLeft = this.calLeft || 0;
     });
+  }
+  // Current-time marker: a thin line across the week, a bold segment on today, and a time pill in the gutter.
+  updateCalNow() {
+    if (!this.calNow) return;
+    const n = /* @__PURE__ */ new Date();
+    const y = (n.getHours() * 60 + n.getMinutes()) / 60 * HOUR_H;
+    this.calNow.line.style.top = `${y}px`;
+    this.calNow.bold.style.top = `${y}px`;
+    this.calNow.label.style.top = `${y - 9}px`;
+    this.calNow.label.textContent = `${pad(n.getHours())}:${pad(n.getMinutes())}`;
   }
   renderCalSidebar(body) {
     const side = body.createDiv("rt-cal-side");
@@ -2072,6 +2095,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     this.render();
   }
   updateNow() {
+    if (this.calNow) this.updateCalNow();
     if (!this.nowEl) return;
     const d = /* @__PURE__ */ new Date();
     const mins = d.getHours() * 60 + d.getMinutes();

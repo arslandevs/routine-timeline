@@ -2,7 +2,7 @@
 
 A Notion-style timeline for your daily routine, inside Obsidian: colored task bars on an hour axis, groups and filters, drag-to-connect dependency arrows, and an inline block you can embed in any note.
 
-> **Status: early release (v0.9.0).** It renders correctly in a headless DOM smoke test across every layout and zoom, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
+> **Status: early release (v0.9.1).** It renders correctly in a headless DOM smoke test across every layout and zoom, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
 
 ## Install
 
@@ -31,7 +31,7 @@ Requires Obsidian 1.4.0 or newer. Works on desktop and mobile.
   - **System properties** (Name, Status, Date, Start, End, Duration (min), Group, Repeat, Comes after) can be renamed, reordered and hidden with the eye, but **not deleted**. Any that were deleted in an earlier version come back automatically
   - **Add property** creates your own: text, number, checkbox, select or date. These can be deleted. Set their values in the task editor. They show as table columns
   - Names apply to the table headers, the task editor and the group menu in every view
-  - **Calendar**: Day, Week and Month grids (dropdown next to the date). Tasks appear on every day they occur, including repeats. Click an empty day or hour to add a task there, click a chip to edit it. A collapsible left sidebar has a mini month calendar, a list of calendars with show/hide eyes, and **Add calendar**
+  - **Calendar**: Day, Week and Month grids (dropdown next to the date). Tasks appear on every day they occur, including repeats. Click an empty day or hour to add a task there, click a chip to edit it. The Week view scrolls sideways and up and down, with the time column and day headers staying put. The current time shows as a thin line across the week, a bolder line on today, and a time label in the margin (updated every minute). Calendar events are solid colored cards A collapsible left sidebar has a mini month calendar, a list of calendars with show/hide eyes, and **Add calendar**
 - **Google Calendar and other calendars** (read-only, via iCal feeds): in Google Calendar open *Settings → your calendar → Secret address in iCal format*, then in Obsidian use **Add calendar** (Calendar sidebar or Settings → Routine Timeline). Events show next to your tasks, including repeating ones and all-day events, and refresh every 30 minutes. Click an event for its details. See the privacy note below
 - **Zoom dropdown** (Timeline): Hours, Day, Week, Bi-week, Month, Quarter, Year, 5 Years
   - **Day** fits all 24 hours in the view without scrolling. **Hours** zooms in so you can scroll through the day
