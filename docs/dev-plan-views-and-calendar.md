@@ -1,6 +1,6 @@
 # Dev plan: view tabs, Calendar layout, Google Calendar
 
-Status: plan only, not built yet. Everything below is feasible in an Obsidian plugin. The only real risk is Google sign-in (see Phase 3).
+Status (v0.9.0): **Phase 1 (view tabs), Phase 2 (Calendar layout and sidebar) and Phase 3A (ICS feeds) are built.** Phase 3B (Google OAuth, live sync, write-back) and the Timeline overlay are not built. They need a Google Cloud OAuth client and a live test, which cannot be done from the dev machine alone.
 
 ## 0. Where we are
 - `main.js` is hand-edited plain JS (no TS source). One global `store.ui` (layout, zoom, group, filters) drives every view.

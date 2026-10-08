@@ -2,7 +2,7 @@
 
 A Notion-style timeline for your daily routine, inside Obsidian: colored task bars on an hour axis, groups and filters, drag-to-connect dependency arrows, and an inline block you can embed in any note.
 
-> **Status: early release (v0.8.1).** It renders correctly in a headless DOM smoke test across every layout and zoom, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
+> **Status: early release (v0.9.0).** It renders correctly in a headless DOM smoke test across every layout and zoom, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
 
 ## Install
 
@@ -17,7 +17,8 @@ Requires Obsidian 1.4.0 or newer. Works on desktop and mobile.
 
 ## Features
 
-- **Three layouts**: Table, Board and Timeline. Click the sliders icon (**View settings**) in the toolbar and pick one under **Layout**. Same tasks, same filters, different view
+- **View tabs** across the top, like Notion: *Default view | Timeline | … | +*. Click a tab to switch, **+** to add a Table, Board, Timeline or Calendar view, double-click a tab to rename it, right-click for Rename, Duplicate and Delete. Each view keeps its own layout, zoom, filters and grouping. **View settings → Layout** changes the layout of the current view
+- **Four layouts**: Table, Board, Timeline and Calendar. Same tasks, same filters, different view
   - **Table**: one row per task. Click a row to edit it. Hover a row (or select any) to show its checkbox
     - **Selecting**: tick one or more rows, or the header box for all. A floating bar shows **N selected**, a trash icon, a **⋯** menu and a clear button, like Notion. Right-click a row for the same menu
     - **⋯ menu**: *Mark as* any status, *Edit group & color* for all selected, *Duplicate*, and *Delete*. Delete asks you to confirm and removes any arrows pointing at the deleted tasks
@@ -30,6 +31,8 @@ Requires Obsidian 1.4.0 or newer. Works on desktop and mobile.
   - **System properties** (Name, Status, Date, Start, End, Duration (min), Group, Repeat, Comes after) can be renamed, reordered and hidden with the eye, but **not deleted**. Any that were deleted in an earlier version come back automatically
   - **Add property** creates your own: text, number, checkbox, select or date. These can be deleted. Set their values in the task editor. They show as table columns
   - Names apply to the table headers, the task editor and the group menu in every view
+  - **Calendar**: Day, Week and Month grids (dropdown next to the date). Tasks appear on every day they occur, including repeats. Click an empty day or hour to add a task there, click a chip to edit it. A collapsible left sidebar has a mini month calendar, a list of calendars with show/hide eyes, and **Add calendar**
+- **Google Calendar and other calendars** (read-only, via iCal feeds): in Google Calendar open *Settings → your calendar → Secret address in iCal format*, then in Obsidian use **Add calendar** (Calendar sidebar or Settings → Routine Timeline). Events show next to your tasks, including repeating ones and all-day events, and refresh every 30 minutes. Click an event for its details. See the privacy note below
 - **Zoom dropdown** (Timeline): Hours, Day, Week, Bi-week, Month, Quarter, Year, 5 Years
   - **Day** fits all 24 hours in the view without scrolling. **Hours** zooms in so you can scroll through the day
   - **Week and larger** show one column per day. A repeating task appears only on the days it repeats: at its start time inside the day column in Week and Bi-week, and as a mark per day (consecutive days merge) in Month and larger. These views are read-only: click a bar to edit it
@@ -75,12 +78,21 @@ All lines are optional:
 | `filter` | Comma-separated group names to show |
 | `layout` | `timeline` (default), `table` or `board` |
 | `zoom` | `hours`, `day` (default), `week`, `biweek`, `month`, `quarter`, `year` or `5years` |
+| `calendar` | For `layout: calendar`: `day`, `week` or `month` (default) |
+| `view` | Use the settings of a saved view by name, e.g. `view: Timeline` |
 
 ## Data
 
 Tasks are stored in the plugin's own data (`.obsidian/plugins/routine-timeline/data.json`), not in your notes. This keeps it simple and works on mobile. Moving a repeating task changes its time for every day it repeats.
 
+## Privacy
+
+The secret iCal address of a calendar lets anyone who has it read that calendar. It is stored in this plugin's `data.json`, so do not commit or share that file. Events are fetched directly from Google and are kept in memory only.
+
 ## Limitations
+
+- Calendar events are read-only and come from iCal feeds. Google refreshes those feeds every few hours, so a brand-new event can take a while to appear. Signing in with Google (OAuth) for live updates and creating events is not built yet; see `docs/dev-plan-views-and-calendar.md`
+- Calendar events show in the Calendar layout only, not in the Timeline
 
 - Repeats are every day or chosen weekdays, with an optional start, count or end date. There is no monthly repeat or per-day exception yet
 - In Week view a short bar is stretched to a readable minimum width, but it always starts at the task's start time. Bars late in the evening are cut at the end of the day column
