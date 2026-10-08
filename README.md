@@ -2,7 +2,7 @@
 
 A Notion-style task and routine planner for Obsidian. One set of tasks, four layouts (Table, Board, Timeline, Calendar), saved views in a tab bar, repeating tasks, a Google Calendar feed, and an inline block you can drop into any note.
 
-> **Status: early release (v0.11.1).** Every layout, zoom, editor and menu is covered by a headless DOM test, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
+> **Status: early release (v0.11.2).** Every layout, zoom, editor and menu is covered by a headless DOM test, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
 
 ## Install
 

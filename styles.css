@@ -16,8 +16,10 @@
 	display: flex;
 	flex-direction: column;
 	height: 100%;
-	padding: 0 !important;
 	--rt-dep: #c9962a;
+}
+.rt-root.rt-root {
+	padding: 0;
 }
 .rt-root.is-embedded {
 	border: 1px solid var(--rt-line);
@@ -1309,10 +1311,8 @@
 /* Calendar events: solid cards, not see-through */
 .rt-cal-chip.is-event {
 	background: var(--rt-bg);
-	background: color-mix(in srgb, var(--rt-sw) 24%, var(--background-primary));
 	border: none;
 	border-left: 3px solid var(--rt-sw);
-	color: var(--rt-fg);
 	color: var(--text-normal);
 }
 
@@ -1332,8 +1332,8 @@
 	padding: 0 6px;
 	font-size: var(--font-ui-small);
 }
-.rt-td-name {
-	padding-right: 72px !important;
+.rt-table td.rt-td-name {
+	padding-right: 72px;
 }
 .rt-open {
 	position: absolute;
