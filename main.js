@@ -982,6 +982,29 @@ const TimelineBoard = class {
       }
     }
     this.totalH = y;
+    // The Timeline canvas shows yesterday/today/tomorrow side by side so scrolling across midnight
+    // feels continuous. Sharing one row per task across all three days used to leave a blank row
+    // wherever a task didn't occur that particular day (its only bar sat in a neighbour column,
+    // maybe scrolled out of view). Each day now packs its own tasks into rows independently, so a
+    // given day's column is always gapless, and a day's packing never depends on `this.day` (which
+    // of the three columns is "selected"), so paging across the boundary can't reshuffle anything.
+    this.dayCols = null;
+    if (dayTimeline && ui.groupBy === "none") {
+      const doneOn = (t2, d) => t2.doneDates.includes(t2.date !== null ? t2.date : ymd(d));
+      const cols = [-1, 0, 1].map((k) => {
+        const d = near[k + 1];
+        const items = this.plugin.store.tasks.filter((t2) => occurs(t2, d)).filter((t2) => !ui.hideDone || !doneOn(t2, d)).filter((t2) => ui.groups.length === 0 || ui.groups.includes(groupLabel(t2))).filter((t2) => !q || t2.title.toLowerCase().includes(q)).sort((a, b) => a.start - b.start || a.end - b.end || taskIndex.get(a.id) - taskIndex.get(b.id));
+        return { k, day: d, items };
+      });
+      for (const col of cols) {
+        col.items.forEach((t2, i) => {
+          this.yCenter.set(`${t2.id}:${col.k}`, i * ROW_H + ROW_H / 2);
+          if (col.k === 0) this.yCenter.set(t2.id, i * ROW_H + ROW_H / 2);
+        });
+      }
+      this.dayCols = cols;
+      this.totalH = Math.max(0, ...cols.map((c) => c.items.length * ROW_H));
+    }
   }
   // ---- rendering ---------------------------------------------------------------
   render() {
@@ -1342,12 +1365,6 @@ const TimelineBoard = class {
         } else if (this.offPanel) this.offPanel();
       };
     }
-    panel.createDiv({ cls: "rt-panel-label rt-panel-gap", text: "Properties" });
-    panel.createDiv({ cls: "rt-panel-hint", text: "Click a column header in the Table layout to rename, change type, sort, filter, group, freeze, hide or delete a property." });
-    const addProp = panel.createEl("button", { cls: "rt-addprop" });
-    (0, import_obsidian.setIcon)(addProp.createSpan(), "plus");
-    addProp.createSpan({ text: "Add property" });
-    addProp.onclick = (ev) => this.addPropertyMenu(ev, null);
     const outside = (e) => {
       const target = e.target;
       if (!panel.contains(target) && !anchor.contains(target)) off();
@@ -1465,12 +1482,24 @@ const TimelineBoard = class {
     svg.classList.add("rt-deps");
     rows.appendChild(svg);
     this.svg = svg;
-    for (const item of this.layout) {
-      if (item.kind === "head") this.renderHead(rows, item);
-      else this.renderTask(rows, item.t);
-    }
-    if (this.layout.length === 0) {
-      rows.createDiv({ cls: "rt-empty", text: "No tasks match. Use New to add one." });
+    if (this.dayCols) {
+      let any = false;
+      for (const col of this.dayCols) {
+        col.items.forEach((t, i) => {
+          any = true;
+          this.renderDayBar(rows, t, col.k, i);
+        });
+      }
+      rows.style.height = `${this.totalH}px`;
+      if (!any) rows.createDiv({ cls: "rt-empty", text: "No tasks match. Use New to add one." });
+    } else {
+      for (const item of this.layout) {
+        if (item.kind === "head") this.renderHead(rows, item);
+        else this.renderTask(rows, item.t);
+      }
+      if (this.layout.length === 0) {
+        rows.createDiv({ cls: "rt-empty", text: "No tasks match. Use New to add one." });
+      }
     }
     const add = canvas.createDiv("rt-new");
     const addBtn = add.createEl("button", { cls: "rt-new-btn" });
@@ -3020,6 +3049,59 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
       this.dayStr = keep;
     };
   }
+  // Used when each of the three visible days packs its own rows independently (the common,
+  // ungrouped Timeline case): one bar per (task, day) instance, positioned at that day's own
+  // compact row index instead of sharing a row with the task's other-day instances.
+  renderDayBar(parent, t, k, rowIndex) {
+    const row = parent.createDiv("rt-row");
+    row.style.position = "absolute";
+    row.style.left = "0";
+    row.style.right = "0";
+    row.style.top = `${rowIndex * ROW_H}px`;
+    row.style.height = `${ROW_H}px`;
+    this.markBarInstance(t.id, k);
+    if (k === 0) {
+      const isDone = this.isDone(t);
+      const bar = row.createDiv({ cls: `rt-bar rt-c-${t.color}` });
+      bar.dataset.id = t.id;
+      bar.toggleClass("is-done", isDone);
+      bar.toggleClass("is-selected", this.selectedId === t.id);
+      const inner = bar.createDiv("rt-bar-in");
+      const cb = inner.createEl("input", { cls: "rt-check", type: "checkbox" });
+      cb.checked = isDone;
+      cb.onchange = () => void this.toggleDone(t, cb.checked);
+      inner.createSpan({ cls: "rt-title", text: t.title || "Untitled" });
+      if (t.date === null) (0, import_obsidian.setIcon)(inner.createSpan({ cls: "rt-repeat" }), "repeat");
+      bar.createDiv("rt-edge rt-edge-l");
+      bar.createDiv("rt-edge rt-edge-r");
+      const link = bar.createDiv("rt-link");
+      this.bars.set(t.id, bar);
+      this.place(bar, t);
+      this.attachDrag(bar, t);
+      this.attachLink(link, t);
+      return;
+    }
+    const d = new Date(this.day.getFullYear(), this.day.getMonth(), this.day.getDate() + k);
+    const key = ymd(d);
+    const bar = row.createDiv({ cls: `rt-bar is-neighbour rt-c-${t.color}` });
+    bar.dataset.id = t.id;
+    const done = t.doneDates.includes(t.date !== null ? t.date : key);
+    bar.toggleClass("is-done", done);
+    const inner = bar.createDiv("rt-bar-in");
+    const cb = inner.createEl("input", { cls: "rt-check", type: "checkbox" });
+    cb.checked = done;
+    cb.onchange = () => void this.toggleDone(t, cb.checked, key);
+    inner.createSpan({ cls: "rt-title", text: t.title || "Untitled" });
+    if (t.date === null) (0, import_obsidian.setIcon)(inner.createSpan({ cls: "rt-repeat" }), "repeat");
+    this.place(bar, t, this.X0 + k * this.hw * 24);
+    bar.onclick = (e) => {
+      if (e.target.closest("input")) return;
+      const keep = this.dayStr;
+      this.dayStr = key;
+      this.editTask(t);
+      this.dayStr = keep;
+    };
+  }
   renderTask(parent, t) {
     const row = parent.createDiv("rt-row");
     row.style.height = `${ROW_H}px`;
@@ -3179,13 +3261,16 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
       return as.find((k) => bs.includes(k)) ?? null;
     };
     for (const t of this.visible) {
-      const y2 = this.yCenter.get(t.id);
-      if (y2 === void 0 || !this.barInstances.has(t.id)) continue;
+      if (!this.barInstances.has(t.id)) continue;
       for (const depId of t.deps) {
         const dep = byId.get(depId);
-        const y1 = this.yCenter.get(depId);
         const k = dep ? sharedK(depId, t.id) : null;
-        if (!dep || y1 === void 0 || k === null) continue;
+        if (!dep || k === null) continue;
+        // With independent per-day row packing (this.dayCols), each (task, day) instance has its
+        // own y; without it (the grouped fallback), every instance of a task shares one row/y.
+        const y1 = this.dayCols ? this.yCenter.get(`${depId}:${k}`) : this.yCenter.get(depId);
+        const y2 = this.dayCols ? this.yCenter.get(`${t.id}:${k}`) : this.yCenter.get(t.id);
+        if (y1 === void 0 || y2 === void 0) continue;
         const dayX = this.X0 + k * this.hw * 24;
         const x1 = dayX + this.px(dep.end);
         const x2 = dayX + this.px(t.start) - 2;
