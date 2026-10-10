@@ -2503,14 +2503,12 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     bar.style.width = `${w}px`;
     bar.toggleClass("is-narrow", w < 70);
     bar.toggleClass("is-tiny", w < 38);
-    if (bar.rtOut) {
-      // Like Notion: when the title does not fit, show it beside the bar instead of cutting it off.
-      const tw = this.textWidth(t.title || "Untitled") + (t.date === null ? 20 : 0);
-      const fits = w >= tw + 28 + 20 + 6;
-      bar.toggleClass("has-out", !fits);
-      const room = this.hw * 24;
-      bar.toggleClass("out-left", !fits && left + w + 22 + tw + 8 > room && left - 22 - tw - 8 > 0);
-    }
+    // Like Notion: when the title does not fit, it starts inside the box and runs on past its right edge.
+    const tw = this.textWidth(t.title || "Untitled") + (t.date === null ? 20 : 0);
+    const fits = w >= tw + 28 + 20 + 6;
+    bar.toggleClass("has-out", !fits);
+    // Near the end of the day it would run off the grid, so it ends at the box's right edge and runs left instead.
+    bar.toggleClass("out-left", !fits && left + tw + 40 > this.hw * 24 && left + w - tw - 40 > 0);
     bar.title = `${t.title || "Untitled"}
 ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
   }
@@ -2530,10 +2528,6 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
     if (t.date === null) (0, import_obsidian.setIcon)(inner.createSpan({ cls: "rt-repeat" }), "repeat");
     bar.createDiv("rt-edge rt-edge-l");
     bar.createDiv("rt-edge rt-edge-r");
-    const out = bar.createDiv("rt-out");
-    out.createSpan({ cls: "rt-out-title", text: t.title || "Untitled" });
-    if (t.date === null) (0, import_obsidian.setIcon)(out.createSpan({ cls: "rt-repeat" }), "repeat");
-    bar.rtOut = out;
     const link = bar.createDiv("rt-link");
     this.bars.set(t.id, bar);
     this.place(bar, t);

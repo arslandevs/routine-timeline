@@ -245,43 +245,23 @@
 	height: 12px;
 }
 
-/* Title beside the bar when it does not fit inside (like Notion) */
-.rt-out {
-	position: absolute;
-	top: 0;
-	bottom: 0;
-	left: 100%;
-	display: none;
-	align-items: center;
-	gap: 6px;
-	margin-left: 22px;
-	white-space: nowrap;
-	color: var(--text-normal);
-	font-weight: var(--font-medium);
-	cursor: grab;
-	user-select: none;
-}
-.rt-bar.has-out .rt-out {
-	display: flex;
-}
-.rt-bar.has-out.out-left .rt-out {
-	left: auto;
-	right: 100%;
-	margin-right: 22px;
-	margin-left: 0;
+/* Title that does not fit inside the bar: starts inside the box and runs on past it (like Notion) */
+.rt-bar.has-out .rt-bar-in {
+	justify-content: flex-start;
+	padding: 0 6px;
+	overflow: visible;
 }
 .rt-bar.has-out .rt-title {
-	display: none;
+	flex: none;
+	overflow: visible;
+	text-overflow: clip;
+	color: var(--text-normal);
 }
-.rt-bar.has-out .rt-bar-in .rt-repeat {
-	display: none;
+.rt-bar.has-out.out-left .rt-bar-in {
+	justify-content: flex-end;
 }
-.rt-bar.has-out .rt-bar-in {
-	justify-content: center;
-	padding: 0 3px;
-}
-.rt-bar.is-done .rt-out-title {
-	text-decoration: line-through;
+.rt-bar.has-out .rt-repeat {
+	flex: none;
 }
 
 /* Edge handles: drag to change start or end time */
