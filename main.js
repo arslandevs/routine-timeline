@@ -920,9 +920,10 @@ const TimelineBoard = class {
     const dayTimeline = this.ui.layout === "timeline" && !sp;
     const inRange = sp ? (t) => t.date === null || t.date >= sp.startStr && t.date < sp.endStr : dayTimeline ? (t) => near.some((x) => occurs(t, x)) : (t) => occurs(t, this.day);
     this.visible = this.plugin.store.tasks.filter(inRange).filter((t) => !ui.hideDone || !this.isDone(t)).filter((t) => ui.groups.length === 0 || ui.groups.includes(groupLabel(t))).filter((t) => !q || t.title.toLowerCase().includes(q)).sort((a, b) => {
+      // Row order must not depend on which of the three visible days is "selected" (this.day), or
+      // rows reshuffle mid-scroll as the edge-watcher pages to a neighbour. Order by time of day only.
       const byDate = sp ? (a.date || "").localeCompare(b.date || "") : 0;
-      const today = dayTimeline ? Number(!occurs(a, this.day)) - Number(!occurs(b, this.day)) : 0;
-      return byDate || today || a.start - b.start || a.end - b.end;
+      return byDate || a.start - b.start || a.end - b.end || a.title.localeCompare(b.title);
     });
     this.layout = [];
     this.yCenter.clear();
