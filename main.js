@@ -932,11 +932,18 @@ const TimelineBoard = class {
       // Row order must not depend on which of the three visible days is "selected" (this.day), or
       // rows reshuffle mid-scroll as the edge-watcher pages to a neighbour. Order by time of day only.
       // The Table layout's column Sort overrides this, since its rows have no "day" concept.
-      if (ui.layout === "table" && ui.sortKey) {
-        const va = this.cellValue(a, ui.sortKey, byIdAll);
-        const vb = this.cellValue(b, ui.sortKey, byIdAll);
-        const cmp = typeof va === "number" && typeof vb === "number" ? va - vb : String(va).localeCompare(String(vb));
-        if (cmp) return ui.sortDir === "desc" ? -cmp : cmp;
+      if (ui.layout === "table") {
+        if (ui.sortKey) {
+          const va = this.cellValue(a, ui.sortKey, byIdAll);
+          const vb = this.cellValue(b, ui.sortKey, byIdAll);
+          const cmp = typeof va === "number" && typeof vb === "number" ? va - vb : String(va).localeCompare(String(vb));
+          if (cmp) return ui.sortDir === "desc" ? -cmp : cmp;
+          return 0;
+        }
+        // No column sort: keep the task list's own order (new rows stay appended at the end)
+        // rather than ordering by start time, which would scatter new rows wherever their
+        // default time falls.
+        return 0;
       }
       const byDate = sp ? (a.date || "").localeCompare(b.date || "") : 0;
       return byDate || a.start - b.start || a.end - b.end || a.title.localeCompare(b.title);
