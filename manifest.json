@@ -1,7 +1,7 @@
 {
   "id": "routine-timeline",
   "name": "Routine Timeline",
-  "version": "0.20.1",
+  "version": "0.20.2",
   "minAppVersion": "1.4.0",
   "description": "Plan tasks and routines with Table, Board, Timeline and Calendar views, saved view tabs, repeating tasks, notes, and read-only Google Calendar events.",
   "author": "Arsalan",

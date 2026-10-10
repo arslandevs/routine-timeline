@@ -2874,7 +2874,11 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     tb.addEventListener("click", (e) => {
       if (e.target.closest("input, button")) return;
       const td = e.target.closest("td[data-col]");
-      if (td) this.selectCell(td);
+      if (!td) return;
+      // A single click both selects the cell (so arrow-key navigation and the fill handle work
+      // right away) and opens it for editing, like Notion/Airtable - no more needing a second click.
+      this.selectCell(td);
+      this.editCell(td);
     });
     tb.addEventListener("dblclick", (e) => {
       if (e.target.closest("input, button")) return;
@@ -2912,10 +2916,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       if (td) {
         td.addClass("is-cell-sel");
         if (this.restoreCellFocus) td.focus();
-        if (this.cellEditable(this.selCell.col)) {
-          const handle = td.createDiv("rt-fill-handle");
-          handle.addEventListener("pointerdown", (e) => this.startFillDrag(e, this.selCell.id, this.selCell.col, tb));
-        }
+        this.attachFillHandle(td);
       }
     }
   }
@@ -3032,16 +3033,21 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
   }
   selectCell(td) {
     this.host.querySelectorAll(".is-cell-sel").forEach((x) => x.removeClass("is-cell-sel"));
-    this.host.querySelectorAll(".rt-fill-handle").forEach((x) => x.remove());
     td.addClass("is-cell-sel");
     td.focus();
-    const k = td.dataset.col;
-    if (this.cellEditable(k)) {
-      const tb = td.closest("tbody");
-      const handle = td.createDiv("rt-fill-handle");
-      handle.addEventListener("pointerdown", (e) => this.startFillDrag(e, td.parentElement.dataset.id, k, tb));
-    }
+    this.attachFillHandle(td);
     this.selCell = { id: td.parentElement.dataset.id, col: td.dataset.col };
+  }
+  // Adds the drag-to-copy dot to a cell, replacing any other one on the page. Called both when a
+  // cell is selected and again after editCell rebuilds the cell's contents (which would otherwise
+  // wipe it), so the dot is visible the whole time a cell is selected or being edited.
+  attachFillHandle(td) {
+    this.host.querySelectorAll(".rt-fill-handle").forEach((x) => x.remove());
+    const k = td.dataset.col;
+    if (!this.cellEditable(k)) return;
+    const tb = td.closest("tbody");
+    const handle = td.createDiv("rt-fill-handle");
+    handle.addEventListener("pointerdown", (e) => this.startFillDrag(e, td.parentElement.dataset.id, k, tb));
   }
   moveCell(td, key) {
     const tr = td.parentElement;
@@ -3132,6 +3138,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     td.empty();
     const inp = td.createEl("input", { type, cls: "rt-cell-input" });
     inp.value = seed !== void 0 && type === "text" ? seed : value;
+    this.attachFillHandle(td);
     if (k === "group" || customType === "select") {
       const lid = `rt-cell-list-${k}`;
       inp.setAttribute("list", lid);
