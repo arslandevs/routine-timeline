@@ -122,6 +122,10 @@ const defaultProps = () => ({
 });
 const CUSTOM_TYPES = ["text", "number", "checkbox", "select", "date"];
 const CUSTOM_LABEL = { text: "Text", number: "Number", checkbox: "Checkbox", select: "Select", date: "Date" };
+// Column header icons, Notion-style: one per property type so the column's kind of value is
+// recognizable at a glance.
+const CUSTOM_TYPE_ICON = { text: "text", number: "hash", checkbox: "check-square", select: "tags", date: "calendar" };
+const PROP_ICON = { name: "text", status: "circle-dot", date: "calendar", start: "clock", end: "clock", duration: "timer", group: "layers", repeat: "repeat", after: "link" };
 const cleanProps = (v, order) => {
   const props = defaultProps();
   if (v && typeof v === "object") {
@@ -1341,8 +1345,9 @@ const TimelineBoard = class {
     };
   }
   // Drag to reorder: wires drag events on an element; `onDrop(after)` runs when something of `kind` is dropped on it.
-  makeSortable(el, kind, id, onDrop) {
+  makeSortable(el, kind, id, onDrop, vertical) {
     el.draggable = true;
+    const past = (e, r) => vertical ? e.clientY > r.top + r.height / 2 : e.clientX > r.left + r.width / 2;
     el.addEventListener("dragstart", (e) => {
       this.dragKind = kind;
       if (e.dataTransfer) {
@@ -1367,7 +1372,7 @@ const TimelineBoard = class {
       if (this.dragKind !== kind) return;
       e.preventDefault();
       const r = el.getBoundingClientRect();
-      const after = e.clientX > r.left + r.width / 2;
+      const after = past(e, r);
       el.toggleClass("is-drop-before", !after);
       el.toggleClass("is-drop-after", after);
     });
@@ -1377,7 +1382,7 @@ const TimelineBoard = class {
       e.preventDefault();
       const data = e.dataTransfer ? e.dataTransfer.getData("text/plain") : "";
       const r = el.getBoundingClientRect();
-      const after = e.clientX > r.left + r.width / 2;
+      const after = past(e, r);
       clear();
       const dragged = data.startsWith(`${kind}:`) ? data.slice(kind.length + 1) : "";
       if (dragged && dragged !== id) onDrop(dragged, after);
@@ -2198,7 +2203,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     const known = new Set(this.plugin.store.tasks.map((x) => x.id));
     for (const id of [...this.selected]) if (!known.has(id)) this.selected.delete(id);
     const cols = this.plugin.store.propOrder.filter((k) => props[k] && (k === "name" || props[k].visible));
-    const COLS = cols.length + 2;
+    const COLS = cols.length + 3;
     if (this.selected.size > 0) {
       const bar = body.createDiv("rt-selbar");
       bar.createSpan({ cls: "rt-selbar-n", text: `${this.selected.size} selected` });
@@ -2231,6 +2236,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       const th = hr.createEl("th");
       th.toggleClass("is-frozen", this.ui.frozenKey === k);
       const label = th.createSpan("rt-th-label");
+      (0, import_obsidian.setIcon)(label.createSpan({ cls: "rt-th-type-icon" }), this.propIcon(k, props[k]));
       label.createSpan({ text: props[k].label });
       if (this.ui.sortKey === k) (0, import_obsidian.setIcon)(label.createSpan(), this.ui.sortDir === "desc" ? "arrow-down" : "arrow-up");
       if (this.ui.colFilters[k]) (0, import_obsidian.setIcon)(label.createSpan(), "filter");
@@ -2260,6 +2266,12 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     addTh.onclick = (e) => {
       e.stopPropagation();
       this.addPropertyMenu(e, null);
+    };
+    const moreTh = hr.createEl("th", { cls: "rt-th-add", attr: { "aria-label": "Property visibility" } });
+    (0, import_obsidian.setIcon)(moreTh, "more-horizontal");
+    moreTh.onclick = (e) => {
+      e.stopPropagation();
+      this.propVisibilityMenu(e);
     };
     const tb = tbl.createEl("tbody");
     const byId = new Map(this.plugin.store.tasks.map((x) => [x.id, x]));
@@ -2430,6 +2442,10 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     this.focusNewId = t.id;
     void this.plugin.save();
   }
+  propIcon(key, def) {
+    if (def.custom) return CUSTOM_TYPE_ICON[def.type] || "text";
+    return PROP_ICON[key] || "text";
+  }
   // A plain, comparable value for a column: used by the table's column-header Sort and Filter, which
   // work the same way regardless of how the cell happens to be drawn.
   cellValue(t2, k, byId) {
@@ -2521,7 +2537,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
   addPropertyMenu(ev, afterKey) {
     const menu = new import_obsidian.Menu();
     for (const type of CUSTOM_TYPES) {
-      menu.addItem((i) => i.setTitle(`New ${CUSTOM_LABEL[type].toLowerCase()} property`).setIcon("plus").onClick(() => {
+      menu.addItem((i) => i.setTitle(`New ${CUSTOM_LABEL[type].toLowerCase()} property`).setIcon(CUSTOM_TYPE_ICON[type]).onClick(() => {
         const store = this.plugin.store;
         const key = `c_${uid().slice(0, 8)}`;
         store.props[key] = { label: CUSTOM_LABEL[type], visible: true, type, custom: true };
@@ -2533,6 +2549,92 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       }));
     }
     menu.showAtMouseEvent(ev);
+  }
+  // Property visibility: search, show/hide and drag-reorder every property in one place, like
+  // Notion's own "Property visibility" panel. A floating popover (outside the re-rendered DOM, like
+  // the column menu) so searching and reordering don't get interrupted by the re-render each edit
+  // triggers.
+  propVisibilityMenu(ev) {
+    if (this.offPropVis) this.offPropVis();
+    const store = this.plugin.store;
+    const props = store.props;
+    const panel = document.body.createDiv("rt-colmenu rt-propvis");
+    const pad = 8;
+    panel.style.visibility = "hidden";
+    const place = () => {
+      const r = panel.getBoundingClientRect();
+      const vw = window.innerWidth, vh = window.innerHeight;
+      let x = ev.clientX, y = ev.clientY;
+      if (x + r.width + pad > vw) x = vw - r.width - pad;
+      if (y + r.height + pad > vh) y = vh - r.height - pad;
+      panel.style.left = `${Math.max(pad, x)}px`;
+      panel.style.top = `${Math.max(pad, y)}px`;
+      panel.style.visibility = "visible";
+    };
+    const searchWrap = panel.createDiv("rt-colmenu-filter");
+    const searchInput = searchWrap.createEl("input", { type: "text", attr: { placeholder: "Search for a property…" } });
+    searchInput.onclick = (e) => e.stopPropagation();
+    searchInput.onkeydown = (e) => e.stopPropagation();
+    const headRow = panel.createDiv("rt-propvis-head");
+    headRow.createSpan({ text: "Shown in table" });
+    const hideAllBtn = headRow.createEl("button", { cls: "rt-propvis-hideall" });
+    const list = panel.createDiv("rt-propvis-list");
+    const draw = () => {
+      list.empty();
+      const q = searchInput.value.trim().toLowerCase();
+      const order = store.propOrder.filter((k) => props[k] && (!q || props[k].label.toLowerCase().includes(q)));
+      const anyVisible = order.some((k) => k !== "name" && props[k].visible);
+      hideAllBtn.textContent = anyVisible ? "Hide all" : "Show all";
+      for (const k of order) {
+        const def = props[k];
+        const visible = k === "name" || def.visible;
+        const row = list.createDiv("rt-propvis-row");
+        row.toggleClass("is-hidden", !visible);
+        if (k !== "name") {
+          const handle = row.createSpan({ cls: "rt-propvis-drag" });
+          (0, import_obsidian.setIcon)(handle, "grip-vertical");
+          this.makeSortable(row, "propvis", k, (dragged, after) => void this.plugin.moveProp(dragged, k, after), true);
+        } else {
+          row.createSpan("rt-propvis-drag");
+        }
+        (0, import_obsidian.setIcon)(row.createSpan({ cls: "rt-propvis-icon" }), this.propIcon(k, def));
+        row.createSpan({ cls: "rt-propvis-label", text: def.label });
+        const eyeBtn = row.createEl("button", { cls: "clickable-icon rt-propvis-eye", attr: { "aria-label": visible ? "Hide" : "Show" } });
+        (0, import_obsidian.setIcon)(eyeBtn, visible ? "eye" : "eye-off");
+        if (k === "name") eyeBtn.disabled = true;
+        else {
+          eyeBtn.onclick = (e) => {
+            e.stopPropagation();
+            def.visible = !def.visible;
+            void this.plugin.save();
+            draw();
+          };
+        }
+      }
+    };
+    hideAllBtn.onclick = () => {
+      const anyVisible = store.propOrder.some((k) => k !== "name" && props[k] && props[k].visible);
+      for (const k of store.propOrder) if (k !== "name" && props[k]) props[k].visible = !anyVisible;
+      void this.plugin.save();
+      draw();
+    };
+    searchInput.oninput = () => draw();
+    draw();
+    document.body.appendChild(panel);
+    window.requestAnimationFrame(() => {
+      place();
+      searchInput.focus();
+    });
+    const onOutside = (e) => {
+      if (!panel.contains(e.target)) off();
+    };
+    const off = () => {
+      document.removeEventListener("pointerdown", onOutside, true);
+      panel.remove();
+      this.offPropVis = null;
+    };
+    document.addEventListener("pointerdown", onOutside, true);
+    this.offPropVis = off;
   }
   // Conditional color: highlight a row/bar when a property matches a rule, like Notion. A floating
   // popover (appended to document.body, like the column menu) so typing a rule's value doesn't get
@@ -2706,7 +2808,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
         onClick: (e2) => {
           const m = new import_obsidian.Menu();
           for (const type of CUSTOM_TYPES) {
-            m.addItem((i) => i.setTitle(CUSTOM_LABEL[type]).setChecked(def.type === type).onClick(() => {
+            m.addItem((i) => i.setTitle(CUSTOM_LABEL[type]).setIcon(CUSTOM_TYPE_ICON[type]).setChecked(def.type === type).onClick(() => {
               // Follow the rename along if the label was still the type's own default (e.g. "Number").
               if (def.label === CUSTOM_LABEL[def.type]) def.label = CUSTOM_LABEL[type];
               def.type = type;

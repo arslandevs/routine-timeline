@@ -1176,6 +1176,91 @@
 	color: var(--text-error);
 }
 
+/* Property visibility popover */
+.rt-propvis {
+	width: 260px;
+}
+.rt-propvis-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 4px 6px 6px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+}
+.rt-propvis-hideall {
+	background: transparent;
+	box-shadow: none;
+	color: var(--interactive-accent);
+	font-size: var(--font-ui-smaller);
+	padding: 0;
+	height: auto;
+}
+.rt-propvis-list {
+	display: flex;
+	flex-direction: column;
+}
+.rt-propvis-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 5px 4px;
+	border-radius: 6px;
+}
+.rt-propvis-row:hover {
+	background: var(--background-modifier-hover);
+}
+.rt-propvis-row.is-drop-before {
+	box-shadow: inset 0 2px 0 var(--interactive-accent);
+}
+.rt-propvis-row.is-drop-after {
+	box-shadow: inset 0 -2px 0 var(--interactive-accent);
+}
+.rt-propvis-row.is-dragging {
+	opacity: 0.4;
+}
+.rt-propvis-drag {
+	width: 14px;
+	height: 14px;
+	flex: none;
+	color: var(--text-faint);
+	cursor: grab;
+}
+.rt-propvis-drag svg {
+	width: 14px;
+	height: 14px;
+}
+.rt-propvis-icon {
+	flex: none;
+	color: var(--text-faint);
+}
+.rt-propvis-icon svg {
+	width: 14px;
+	height: 14px;
+}
+.rt-propvis-label {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: var(--font-ui-small);
+}
+.rt-propvis-row.is-hidden .rt-propvis-label {
+	color: var(--text-faint);
+}
+.rt-propvis-eye svg {
+	width: 14px;
+	height: 14px;
+}
+.rt-propvis-row.is-hidden .rt-propvis-eye {
+	color: var(--text-faint);
+}
+.rt-propvis-eye:disabled {
+	opacity: 0.35;
+	pointer-events: none;
+}
+
 .rt-chip-sm {
 	background: var(--background-modifier-hover);
 }
