@@ -254,6 +254,26 @@ function normalize(raw) {
   const pp = cleanProps(s.props, s.propOrder);
   return { tasks, views, activeView, statuses: cleanStatuses(s.statuses), props: pp.props, propOrder: pp.order, feeds: cleanFeeds(s.feeds) };
 }
+// A vault can hold several independent task databases ("bases"), each with its own tasks,
+// properties, statuses and saved views - like separate Notion databases. The plugin's saved data
+// is now a list of bases plus which one is active; `normalizeAppData` also upgrades data saved by
+// older single-database versions of the plugin into a single base named "Routine".
+function normalizeAppData(raw) {
+  if (raw && Array.isArray(raw.bases) && raw.bases.length > 0) {
+    const bases = raw.bases.filter((b) => b && typeof b === "object").map((b, i) => ({
+      id: typeof b.id === "string" && b.id ? b.id : uid(),
+      name: typeof b.name === "string" && b.name.trim() ? b.name.trim() : `Base ${i + 1}`,
+      store: normalize(b.store) || defaultStore([])
+    }));
+    if (bases.length === 0) return null;
+    const activeBaseId = bases.some((b) => b.id === raw.activeBaseId) ? raw.activeBaseId : bases[0].id;
+    return { bases, activeBaseId };
+  }
+  const legacy = normalize(raw);
+  if (!legacy) return null;
+  const id = uid();
+  return { bases: [{ id, name: "Routine", store: legacy }], activeBaseId: id };
+}
 function parseOpts(src) {
   const o = { height: 420, groupBy: "none", hideDone: false, groups: [], layout: "timeline", zoom: "day", cal: "month", view: "" };
   for (const line of src.split("\n")) {
@@ -524,25 +544,43 @@ function expandIcs(events, fromMs, toMs) {
 const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
   constructor() {
     super(...arguments);
-    this.store = defaultStore([]);
+    const id = uid();
+    this.appData = { bases: [{ id, name: "Routine", store: defaultStore([]) }], activeBaseId: id };
     this.boards = /* @__PURE__ */ new Set();
     this.feedData = /* @__PURE__ */ new Map();
     this.expandCache = /* @__PURE__ */ new Map();
   }
+  // `store` always reads/writes the currently active base, so the rest of the plugin (which reads
+  // and writes `this.plugin.store.*` everywhere) doesn't need to know bases exist at all.
+  get store() {
+    const b = this.appData.bases.find((x) => x.id === this.appData.activeBaseId);
+    return (b || this.appData.bases[0]).store;
+  }
+  set store(v) {
+    const b = this.appData.bases.find((x) => x.id === this.appData.activeBaseId);
+    (b || this.appData.bases[0]).store = v;
+  }
   async onload() {
-    const loaded = normalize(await this.loadData());
-    if (loaded) {
-      this.store = loaded;
+    const migrated = normalizeAppData(await this.loadData());
+    if (migrated) {
+      this.appData = migrated;
     } else {
-      this.store = defaultStore(seedTasks());
-      await this.saveData(this.store);
+      const id = uid();
+      this.appData = { bases: [{ id, name: "Routine", store: defaultStore(seedTasks()) }], activeBaseId: id };
+      await this.saveData(this.appData);
     }
     this.registerView(VIEW_TYPE, (leaf) => new TimelineView(leaf, this));
     this.addRibbonIcon("gantt-chart", "Open timeline view", () => void this.openView());
+    this.addRibbonIcon("database", "Switch database", () => new BaseSwitcherModal(this.app, this).open());
     this.addCommand({
       id: "open-view",
       name: "Open timeline view",
       callback: () => void this.openView()
+    });
+    this.addCommand({
+      id: "switch-base",
+      name: "Switch database",
+      callback: () => new BaseSwitcherModal(this.app, this).open()
     });
     this.addCommand({
       id: "insert-block",
@@ -661,7 +699,7 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
   async addFeed(name, url, color) {
     const f = { id: uid(), name: name.trim() || "Calendar", url: url.trim(), color, visible: true };
     this.store.feeds.push(f);
-    await this.saveData(this.store);
+    await this.saveData(this.appData);
     await this.fetchFeed(f);
     for (const b of this.boards) b.render();
   }
@@ -690,8 +728,51 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     );
   }
   async save() {
-    await this.saveData(this.store);
+    await this.saveData(this.appData);
     for (const b of this.boards) b.render();
+  }
+  // ---- databases ("bases"): separate task lists you switch between, like separate Notion
+  // databases. Each embed and the main view always shows whichever base is currently active.
+  baseList() {
+    return this.appData.bases;
+  }
+  activeBase() {
+    return this.appData.bases.find((b) => b.id === this.appData.activeBaseId) || this.appData.bases[0];
+  }
+  uniqueBaseName(base) {
+    const names = new Set(this.appData.bases.map((b) => b.name.toLowerCase()));
+    if (!names.has(base.toLowerCase())) return base;
+    for (let i = 2; ; i++) if (!names.has(`${base} ${i}`.toLowerCase())) return `${base} ${i}`;
+  }
+  async createBase(name) {
+    const b = { id: uid(), name: this.uniqueBaseName(name && name.trim() ? name.trim() : "New database"), store: defaultStore([]) };
+    this.appData.bases.push(b);
+    await this.switchBase(b.id);
+    return b;
+  }
+  async switchBase(id) {
+    if (!this.appData.bases.some((b) => b.id === id) || id === this.appData.activeBaseId) return;
+    this.appData.activeBaseId = id;
+    for (const b of this.boards) {
+      if (!b.opts.embedded) {
+        b.initialScroll = true;
+        b.selected.clear();
+      }
+    }
+    await this.save();
+  }
+  async renameBase(id, name) {
+    const b = this.appData.bases.find((x) => x.id === id);
+    const n = name.trim();
+    if (!b || !n) return;
+    b.name = this.uniqueBaseName(n);
+    await this.save();
+  }
+  async deleteBase(id) {
+    if (this.appData.bases.length <= 1) return;
+    this.appData.bases = this.appData.bases.filter((b) => b.id !== id);
+    if (this.appData.activeBaseId === id) this.appData.activeBaseId = this.appData.bases[0].id;
+    await this.save();
   }
 };
 const TimelineView = class extends import_obsidian.ItemView {
@@ -1185,6 +1266,13 @@ const TimelineBoard = class {
     const store = this.plugin.store;
     const activeId = this.opts.embedded ? this.embedViewId : store.activeView;
     const bar = host.createDiv("rt-tabs");
+    if (!this.opts.embedded) {
+      const baseBtn = bar.createDiv("rt-base-btn");
+      (0, import_obsidian.setIcon)(baseBtn.createSpan({ cls: "rt-base-btn-icon" }), "database");
+      baseBtn.createSpan({ cls: "rt-base-btn-name", text: this.plugin.activeBase().name });
+      baseBtn.setAttribute("aria-label", "Switch database");
+      baseBtn.onclick = () => new BaseSwitcherModal(this.app(), this.plugin).open();
+    }
     for (const v of store.views) {
       const tab = bar.createDiv("rt-tab");
       tab.toggleClass("is-active", v.id === activeId);
@@ -3737,6 +3825,94 @@ const RoutineSettingTab = class extends import_obsidian.PluginSettingTab {
       await this.plugin.refreshFeeds();
       this.display();
     }));
+  }
+};
+const BaseSwitcherModal = class extends import_obsidian.Modal {
+  constructor(app, plugin) {
+    super(app);
+    this.plugin = plugin;
+  }
+  onOpen() {
+    this.draw();
+  }
+  draw() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h3", { text: "Switch database" });
+    contentEl.createEl("p", { cls: "setting-item-description", text: "Each database has its own tasks, properties and views, like a separate Notion database." });
+    const list = contentEl.createDiv("rt-base-list");
+    for (const b of this.plugin.baseList()) {
+      const row = list.createDiv("rt-base-row");
+      const isActive = b.id === this.plugin.appData.activeBaseId;
+      row.toggleClass("is-active", isActive);
+      const main = row.createDiv("rt-base-main");
+      (0, import_obsidian.setIcon)(main.createSpan({ cls: "rt-base-icon" }), "database");
+      if (this.renameId === b.id) {
+        const inp = main.createEl("input", { type: "text", cls: "rt-base-input" });
+        inp.value = b.name;
+        const finish = async (save) => {
+          this.renameId = null;
+          if (save && inp.value.trim() && inp.value.trim() !== b.name) await this.plugin.renameBase(b.id, inp.value);
+          this.draw();
+        };
+        inp.onkeydown = (e) => {
+          e.stopPropagation();
+          if (e.key === "Enter") void finish(true);
+          else if (e.key === "Escape") void finish(false);
+        };
+        inp.onblur = () => void finish(true);
+        inp.onclick = (e) => e.stopPropagation();
+        window.requestAnimationFrame(() => {
+          inp.focus();
+          inp.select();
+        });
+      } else {
+        main.createSpan({ cls: "rt-base-name", text: b.name });
+        if (isActive) main.createSpan({ cls: "rt-base-badge", text: "Active" });
+      }
+      main.onclick = () => {
+        if (this.renameId) return;
+        if (!isActive) void this.plugin.switchBase(b.id).then(() => this.close());
+      };
+      const actions = row.createDiv("rt-base-actions");
+      const renameBtn = actions.createEl("button", { cls: "clickable-icon", attr: { "aria-label": "Rename" } });
+      (0, import_obsidian.setIcon)(renameBtn, "pencil");
+      renameBtn.onclick = (e) => {
+        e.stopPropagation();
+        this.renameId = b.id;
+        this.draw();
+      };
+      const delBtn = actions.createEl("button", { cls: "clickable-icon", attr: { "aria-label": "Delete" } });
+      (0, import_obsidian.setIcon)(delBtn, "trash-2");
+      delBtn.toggleClass("is-disabled", this.plugin.baseList().length <= 1);
+      delBtn.onclick = (e) => {
+        e.stopPropagation();
+        if (this.plugin.baseList().length <= 1) return;
+        new ConfirmModal(this.app, `Delete "${b.name}"?`, "All of its tasks and views are deleted. This cannot be undone.", async () => {
+          await this.plugin.deleteBase(b.id);
+          this.draw();
+        }).open();
+      };
+    }
+    const addRow = new import_obsidian.Setting(contentEl).setName("New database").addText((t) => {
+      t.setPlaceholder("e.g. Work, Personal");
+      t.inputEl.onkeydown = (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          void this.plugin.createBase(t.inputEl.value).then(() => this.close());
+        }
+      };
+      window.requestAnimationFrame(() => t.inputEl.focus());
+    });
+    addRow.addButton(
+      (b) => b.setButtonText("Create").setCta().onClick(() => {
+        const input = addRow.controlEl.querySelector("input");
+        void this.plugin.createBase(input ? input.value : "").then(() => this.close());
+      })
+    );
+  }
+  onClose() {
+    this.contentEl.empty();
   }
 };
 const ConfirmModal = class extends import_obsidian.Modal {
