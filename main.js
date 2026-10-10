@@ -1562,6 +1562,7 @@ const TimelineBoard = class {
     (0, import_obsidian.setIcon)(addBtn.createSpan(), "plus");
     addBtn.createSpan({ text: "New" });
     addBtn.onclick = () => this.addTask();
+    this.enableSpanHoverAdd(canvas, rows);
     this.nowEl = null;
     const i = dayIndex(/* @__PURE__ */ new Date(), sp.start);
     if (i >= 0 && i < sp.n) {
@@ -1586,24 +1587,27 @@ const TimelineBoard = class {
       }
     }
     const w = sp.dayW;
+    const specs = [];
     if (w >= 56) {
       const minW = Math.min(w - 2, 56);
       for (const i of days) {
         const left = i * w + t.start / 1440 * w;
         const width = Math.max(6, Math.min(Math.max((t.end - t.start) / 1440 * w, minW), (i + 1) * w - left - 1));
-        this.spanBar(row, t, left, width);
+        specs.push({ left, width, i });
       }
     } else {
       let k = 0;
       while (k < days.length) {
         let j = k;
         while (j + 1 < days.length && days[j + 1] === days[j] + 1) j++;
-        this.spanBar(row, t, days[k] * w, Math.max(2, (days[j] - days[k] + 1) * w - 1));
+        specs.push({ left: days[k] * w, width: Math.max(2, (days[j] - days[k] + 1) * w - 1), i: days[k] });
         k = j + 1;
       }
     }
+    // A long title may run past its box, but never into the next occurrence of the same task.
+    specs.forEach((sp2, n) => this.spanBar(row, t, sp2.left, sp2.width, sp2.i, (specs[n + 1] ? specs[n + 1].left : sp.total) - sp2.left - 8, specs.length === 1));
   }
-  spanBar(row, t, left, width) {
+  spanBar(row, t, left, width, i0 = 0, room = 0, solo = true) {
     const bar = row.createDiv({ cls: `rt-bar is-span rt-c-${t.color}` });
     bar.dataset.id = t.id;
     bar.toggleClass("is-done", this.isDone(t));
@@ -1611,12 +1615,126 @@ const TimelineBoard = class {
     bar.toggleClass("is-tiny", width < 38);
     bar.style.left = `${left}px`;
     bar.style.width = `${width}px`;
+    // A title that does not fit starts inside the box and runs on past its right edge (like Notion).
+    const tw = this.textWidth(t.title || "Untitled") + (t.date === null ? 20 : 0);
+    bar.toggleClass("has-out", width < tw + 18);
+    bar.toggleClass("out-left", solo && width < tw + 18 && left + tw + 24 > this.sp.total && left + width - tw - 24 > 0);
     bar.title = `${t.title || "Untitled"}
 ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).toLowerCase()}` : ""}`;
     const inner = bar.createDiv("rt-bar-in");
-    inner.createSpan({ cls: "rt-title", text: t.title || "Untitled" });
+    const titleEl = inner.createSpan({ cls: "rt-title", text: t.title || "Untitled" });
+    if (width < tw + 18 && !bar.classList.contains("out-left")) titleEl.style.maxWidth = `${Math.max(40, Math.max(room, width) - 12 - (t.date === null ? 20 : 0))}px`;
     if (t.date === null) (0, import_obsidian.setIcon)(inner.createSpan({ cls: "rt-repeat" }), "repeat");
-    bar.onclick = () => this.editTask(t);
+    const drag = this.attachSpanDrag(bar, t, i0, left);
+    bar.onclick = () => {
+      if (Date.now() - drag.lastDrag < 150) return;
+      this.editTask(t);
+    };
+  }
+  // Drag a bar to move it. Wide columns (week, bi-week): to another day and time. Narrow columns: to another day.
+  // A repeating task can only change its time of day, and only where the columns are wide.
+  attachSpanDrag(bar, t, i0, left0) {
+    const state = { lastDrag: 0 };
+    const sp = this.sp;
+    const w = sp.dayW;
+    const precise = w >= 56;
+    const oneTime = t.date !== null;
+    if (!oneTime && !precise) return state;
+    bar.addClass("is-draggable");
+    const len = t.end - t.start;
+    bar.addEventListener("pointerdown", (e) => {
+      if (e.pointerType !== "mouse" || e.button !== 0) return;
+      e.preventDefault();
+      bar.setPointerCapture(e.pointerId);
+      const x0 = e.clientX;
+      let moved = false;
+      let target = { day: i0, start: t.start };
+      const onMove = (ev) => {
+        const dx = ev.clientX - x0;
+        if (!moved && Math.abs(dx) < 4) return;
+        moved = true;
+        if (precise) {
+          const dm = Math.round(dx / w * 1440 / SNAP) * SNAP;
+          if (oneTime) {
+            const total = clamp(i0 * 1440 + t.start + dm, 0, sp.n * 1440 - 1);
+            const day = Math.floor(total / 1440);
+            target = { day, start: clamp(total - day * 1440, 0, 1440 - len) };
+          } else {
+            target = { day: i0, start: clamp(t.start + dm, 0, 1440 - len) };
+          }
+          bar.style.left = `${target.day * w + target.start / 1440 * w}px`;
+        } else {
+          target = { day: clamp(i0 + Math.round(dx / w), 0, sp.n - 1), start: t.start };
+          bar.style.left = `${target.day * w}px`;
+        }
+      };
+      const onUp = async () => {
+        bar.removeEventListener("pointermove", onMove);
+        bar.removeEventListener("pointerup", onUp);
+        bar.removeEventListener("pointercancel", onUp);
+        if (!moved) return;
+        state.lastDrag = Date.now();
+        if (oneTime) {
+          const s0 = sp.start;
+          t.date = ymd(new Date(s0.getFullYear(), s0.getMonth(), s0.getDate() + target.day));
+        }
+        t.start = target.start;
+        t.end = target.start + len;
+        await this.plugin.save();
+        this.render();
+      };
+      bar.addEventListener("pointermove", onMove);
+      bar.addEventListener("pointerup", onUp);
+      bar.addEventListener("pointercancel", onUp);
+    });
+    return state;
+  }
+  // Hover an empty spot: a dashed block shows on that day (at that hour in wide columns). Click to add a task there.
+  enableSpanHoverAdd(canvas, rows) {
+    const sp = this.sp;
+    const w = sp.dayW;
+    const precise = w >= 56;
+    const ghost = canvas.createDiv("rt-ghost");
+    ghost.style.display = "none";
+    let pick = null;
+    const skip = (t) => t.closest(".rt-bar, .rt-hours, .rt-new, .rt-ghead, .rt-empty, button");
+    const at = (e) => {
+      if (skip(e.target)) return null;
+      const r = canvas.getBoundingClientRect();
+      const rr = rows.getBoundingClientRect();
+      const x = e.clientX - r.left;
+      const y = e.clientY - rr.top;
+      if (y < 0 || x < 0 || x >= sp.total) return null;
+      const i = Math.min(sp.n - 1, Math.floor(x / w));
+      const hour = precise ? Math.min(23, Math.floor((x - i * w) / w * 24)) : null;
+      const date = new Date(sp.start.getFullYear(), sp.start.getMonth(), sp.start.getDate() + i);
+      return { i, hour, date, row: Math.floor(y / ROW_H) };
+    };
+    canvas.addEventListener("mousemove", (e) => {
+      const p = at(e);
+      if (!p) {
+        ghost.style.display = "none";
+        pick = null;
+        return;
+      }
+      pick = p;
+      ghost.style.display = "flex";
+      ghost.style.left = `${p.i * w + (p.hour === null ? 0 : p.hour / 24 * w) + 2}px`;
+      ghost.style.top = `${rows.offsetTop + p.row * ROW_H + 6}px`;
+      ghost.style.width = `${precise ? Math.max(Math.round(DEFAULT_LEN / 1440 * w), 96) : Math.max(Math.round(w) - 3, 74)}px`;
+      const day = p.date.toLocaleDateString(void 0, { month: "short", day: "numeric" });
+      ghost.textContent = precise ? `+ ${day}, ${clockLabel(p.hour * 60)}` : `+ ${day}`;
+    });
+    canvas.addEventListener("mouseleave", () => {
+      ghost.style.display = "none";
+      pick = null;
+    });
+    canvas.addEventListener("click", (e) => {
+      const p = at(e);
+      if (!p || !pick) return;
+      ghost.style.display = "none";
+      this.addTask({ date: ymd(p.date), start: p.hour === null ? 9 * 60 : p.hour * 60 });
+    });
   }
   // ---- table layout --------------------------------------------------------------
   // ---- calendar layout: day / week / month grids with a sidebar, tasks + calendar feeds ----
@@ -2813,7 +2931,8 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
   }
   addTask(preset = {}) {
     const now = /* @__PURE__ */ new Date();
-    const isToday = this.dayStr === ymd(now);
+    const dayStr = preset.date || this.dayStr;
+    const isToday = dayStr === ymd(now);
     const rounded = Math.ceil((now.getHours() * 60 + now.getMinutes()) / SNAP) * SNAP;
     const start = preset.start !== void 0 ? clamp(preset.start, 0, DAY - DEFAULT_LEN) : clamp(isToday ? rounded : 9 * 60, 0, DAY - DEFAULT_LEN);
     const t = {
@@ -2821,7 +2940,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
       title: "",
       start,
       end: start + DEFAULT_LEN,
-      date: this.dayStr,
+      date: dayStr,
       days: null,
       from: null,
       until: null,
@@ -2834,13 +2953,13 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
       doneDates: [],
       st: {}
     };
-    if (preset.status) withStatus(t, this.dayStr, preset.status, this.plugin.store.statuses);
+    if (preset.status) withStatus(t, dayStr, preset.status, this.plugin.store.statuses);
     new TaskModal(
       this.app(),
       t,
       this.othersFor(t),
       this.plugin.groupNames(),
-      this.dayStr,
+      dayStr,
       true,
       async (draft) => {
         if (!draft) return;

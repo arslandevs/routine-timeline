@@ -2,7 +2,7 @@
 
 A Notion-style task and routine planner for Obsidian. One set of tasks, four layouts (Table, Board, Timeline, Calendar), saved views in a tab bar, repeating tasks, a Google Calendar feed, and an inline block you can drop into any note.
 
-> **Status: early release (v0.12.2).** Every layout, zoom, editor and menu is covered by a headless DOM test, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
+> **Status: early release (v0.13.0).** Every layout, zoom, editor and menu is covered by a headless DOM test, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
 
 ## Install
 
@@ -54,7 +54,7 @@ Edit it like a spreadsheet.
 - Hour axis across the top, one row per task, and a **+ New** row at the bottom
 - **Hover any empty spot of the grid** and a dashed 25-minute block appears at the start of that hour (for example `+ 4:00 PM`). Click it to add a task there
 - **Zoom dropdown**: Hours, Day, Week, Bi-week, Month, Quarter, Year, 5 Years. **Day** fits all 24 hours without scrolling, **Hours** zooms in
-- **Week and larger** show one column per day. A repeating task appears only on the days it repeats: at its start time inside the day column in Week and Bi-week, and as a mark per day (consecutive days merge) in Month and larger. These zooms are read-only: click a bar to edit it
+- **Week and larger** show one column per day. A repeating task appears only on the days it repeats: at its start time inside the day column in Week and Bi-week, and as a mark per day (consecutive days merge) in Month and larger. Titles start inside the bar and run on past it (never into the next occurrence). **Hover an empty spot** to add a task on that day (at that hour in Week and Bi-week). **Drag a bar** to move it: to another day and time in Week and Bi-week, to another day in Month and larger. A repeating task can only change its time of day, and only in Week and Bi-week. Click a bar to edit it
 - **Short tasks keep their name visible**: when a title does not fit inside its bar, it starts inside the bar and runs on past its right edge (like Notion) instead of being cut off
 - **Move and resize**: drag a bar to move it, drag either edge to change the start or end. Snaps to 15 minutes
 - **Dependency arrows**: drag from the small dot at the end of a bar onto another bar. If a task starts before the one it follows ends, the arrow turns **red and dashed**. Tap an arrow, then its ✕, to remove it
@@ -153,7 +153,7 @@ Tasks, views, statuses, properties and calendar feed addresses are stored in the
 - Calendar events show in the Calendar layout only, not in the Timeline
 - Repeats are every day or chosen weekdays, with an optional start, count or end date. There is no monthly repeat or per-day exception yet
 - In the Calendar week view a short block is stretched to a readable minimum, but it always starts at the task's start time
-- Week, Bi-week, Month, Quarter, Year and 5 Years timeline zooms are read-only, and dependency arrows are only drawn in Hours and Day
+- In the Week and larger timeline zooms you can move bars and add tasks, but not resize them, and dependency arrows are only drawn in Hours and Day
 - No ← → buttons for bars outside the visible area (the current-time line, dragging and resizing cover most of that)
 - Inline embedding in Live Preview is the least tested part
 

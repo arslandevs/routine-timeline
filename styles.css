@@ -253,8 +253,8 @@
 }
 .rt-bar.has-out .rt-title {
 	flex: none;
-	overflow: visible;
-	text-overflow: clip;
+	overflow: hidden;
+	text-overflow: ellipsis;
 	color: var(--text-normal);
 }
 .rt-bar.has-out.out-left .rt-bar-in {
@@ -526,6 +526,13 @@
 }
 .rt-bar.is-span.is-narrow .rt-bar-in {
 	padding: 0 4px;
+}
+.rt-bar.is-span.is-draggable .rt-bar-in {
+	cursor: grab;
+	user-select: none;
+}
+.rt-bar.is-span.has-out .rt-bar-in {
+	padding: 0 6px;
 }
 
 /* View settings popover */
