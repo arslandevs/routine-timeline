@@ -179,7 +179,10 @@ const curve = (x1, y1, x2, y2) => {
 };
 const COLOR_OPS = ["eq", "neq", "contains", "empty", "notEmpty", "gt", "lt", "checked", "unchecked"];
 const cleanColorRules = (v) => Array.isArray(v) ? v.filter((r) => r && typeof r === "object" && typeof r.key === "string" && r.key && COLOR_OPS.includes(r.op) && COLORS.includes(r.color)).map((r) => ({ id: typeof r.id === "string" && r.id ? r.id : uid(), key: r.key, op: r.op, value: typeof r.value === "string" ? r.value : "", color: r.color })) : [];
-const defaultUi = () => ({ groupBy: "none", hideDone: false, groups: [], layout: "timeline", zoom: "day", cal: "month", sidebar: true, showTasks: true, sortKey: null, sortDir: "asc", colFilters: {}, frozenKey: null, wrapKeys: [], colorRules: [] });
+const CALC_OPS = ["countAll", "countValues", "countUnique", "countEmpty", "countNotEmpty", "percentEmpty", "percentNotEmpty", "sum", "average", "median", "min", "max", "range"];
+const CALC_LABEL = { countAll: "Count all", countValues: "Count values", countUnique: "Count unique values", countEmpty: "Count empty", countNotEmpty: "Count not empty", percentEmpty: "Percent empty", percentNotEmpty: "Percent not empty", sum: "Sum", average: "Average", median: "Median", min: "Min", max: "Max", range: "Range" };
+const cleanCalc = (v) => v && typeof v === "object" ? Object.fromEntries(Object.entries(v).filter(([, op]) => CALC_OPS.includes(op))) : {};
+const defaultUi = () => ({ groupBy: "none", hideDone: false, groups: [], layout: "timeline", zoom: "day", cal: "month", sidebar: true, showTasks: true, sortKey: null, sortDir: "asc", colFilters: {}, frozenKey: null, wrapKeys: [], colorRules: [], calc: {} });
 const cleanView = (v, fallbackName) => ({
   id: typeof v.id === "string" && v.id ? v.id : uid(),
   name: typeof v.name === "string" && v.name.trim() ? v.name.trim() : fallbackName || "View",
@@ -198,7 +201,9 @@ const cleanView = (v, fallbackName) => ({
   frozenKey: typeof v.frozenKey === "string" && v.frozenKey ? v.frozenKey : null,
   wrapKeys: Array.isArray(v.wrapKeys) ? v.wrapKeys.filter((k) => typeof k === "string") : [],
   // Highlight a row/bar by color when a property matches a rule. First matching rule wins.
-  colorRules: cleanColorRules(v.colorRules)
+  colorRules: cleanColorRules(v.colorRules),
+  // Table-only: a calculation (sum, average, count, ...) shown in the footer under each column.
+  calc: cleanCalc(v.calc)
 });
 const cleanFeeds = (v) => Array.isArray(v) ? v.filter((f) => f && typeof f.url === "string" && f.url.trim()).map((f) => ({
   id: typeof f.id === "string" && f.id ? f.id : uid(),
@@ -745,7 +750,9 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     for (let i = 2; ; i++) if (!names.has(`${base} ${i}`.toLowerCase())) return `${base} ${i}`;
   }
   async createBase(name) {
-    const b = { id: uid(), name: this.uniqueBaseName(name && name.trim() ? name.trim() : "New database"), store: defaultStore([]) };
+    const store = defaultStore([]);
+    store.views[0].layout = "table";
+    const b = { id: uid(), name: this.uniqueBaseName(name && name.trim() ? name.trim() : "New database"), store };
     this.appData.bases.push(b);
     await this.switchBase(b.id);
     return b;
@@ -811,7 +818,7 @@ const BoardChild = class extends import_obsidian.MarkdownRenderChild {
     this.board = null;
   }
   onload() {
-    let ui = { groupBy: this.o.groupBy, hideDone: this.o.hideDone, groups: this.o.groups, layout: this.o.layout, zoom: this.o.zoom, cal: this.o.cal, sidebar: false, showTasks: true, sortKey: null, sortDir: "asc", colFilters: {}, frozenKey: null, wrapKeys: [], colorRules: [] };
+    let ui = { groupBy: this.o.groupBy, hideDone: this.o.hideDone, groups: this.o.groups, layout: this.o.layout, zoom: this.o.zoom, cal: this.o.cal, sidebar: false, showTasks: true, sortKey: null, sortDir: "asc", colFilters: {}, frozenKey: null, wrapKeys: [], colorRules: [], calc: {} };
     if (this.o.view) {
       const v = this.plugin.store.views.find((x) => x.name.toLowerCase() === this.o.view.toLowerCase());
       if (v) ui = { ...v, groups: [...v.groups] };
@@ -873,6 +880,7 @@ const TimelineBoard = class {
     this.offPeek = null;
     this.selCell = null;
     this.restoreCellFocus = false;
+    this.clipboardCell = null;
     this.calTop = null;
     this.calLeft = 0;
     this.calNow = null;
@@ -1271,7 +1279,7 @@ const TimelineBoard = class {
       (0, import_obsidian.setIcon)(baseBtn.createSpan({ cls: "rt-base-btn-icon" }), "database");
       baseBtn.createSpan({ cls: "rt-base-btn-name", text: this.plugin.activeBase().name });
       baseBtn.setAttribute("aria-label", "Switch database");
-      baseBtn.onclick = () => new BaseSwitcherModal(this.app(), this.plugin).open();
+      baseBtn.onclick = (ev) => this.baseMenu(ev);
     }
     for (const v of store.views) {
       const tab = bar.createDiv("rt-tab");
@@ -1480,6 +1488,19 @@ const TimelineBoard = class {
   uiChanged() {
     if (this.opts.embedded) this.render();
     else void this.plugin.save();
+  }
+  // A quick dropdown to switch databases without leaving the view; "Manage databases..." opens the
+  // full picker for renaming, deleting or creating one.
+  baseMenu(ev) {
+    const menu = new import_obsidian.Menu();
+    for (const b of this.plugin.baseList()) {
+      menu.addItem(
+        (i) => i.setTitle(b.name).setIcon("database").setChecked(b.id === this.plugin.appData.activeBaseId).onClick(() => void this.plugin.switchBase(b.id))
+      );
+    }
+    menu.addSeparator();
+    menu.addItem((i) => i.setTitle("Manage databases…").setIcon("sliders-horizontal").onClick(() => new BaseSwitcherModal(this.app(), this.plugin).open()));
+    menu.showAtMouseEvent(ev);
   }
   filterMenu(ev) {
     const ui = this.ui;
@@ -2302,6 +2323,88 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       const td = tb.querySelector(`tr[data-id="${id}"] td[data-col="name"]`);
       if (td) window.requestAnimationFrame(() => this.editCell(td));
     }
+    const ft = tbl.createEl("tfoot").createEl("tr", { cls: "rt-calcrow" });
+    ft.createEl("td", { cls: "rt-td-check" });
+    for (const k of cols) {
+      const td = ft.createEl("td");
+      td.toggleClass("is-frozen", this.ui.frozenKey === k);
+      const op = this.ui.calc[k];
+      td.createSpan({ cls: "rt-calc-val", text: op ? `${CALC_LABEL[op]} ${this.calcValue(k, op)}` : "" });
+      td.onclick = (e) => this.calcMenu(e, k);
+    }
+    ft.createEl("td");
+  }
+  // Column footer: a computed value (count, sum, average, ...) over every row currently shown.
+  calcMenu(ev, key) {
+    const menu = new import_obsidian.Menu();
+    const set = (op) => {
+      if (op) this.ui.calc[key] = op;
+      else delete this.ui.calc[key];
+      void this.plugin.save();
+    };
+    menu.addItem((i) => i.setTitle("None").setChecked(!this.ui.calc[key]).onClick(() => set(null)));
+    menu.addItem((i) => i.setTitle("Count").onClick(() => {
+      const m = new import_obsidian.Menu();
+      for (const op of ["countAll", "countValues", "countUnique", "countEmpty", "countNotEmpty"]) {
+        m.addItem((i2) => i2.setTitle(CALC_LABEL[op]).setChecked(this.ui.calc[key] === op).onClick(() => set(op)));
+      }
+      m.showAtMouseEvent(ev);
+    }));
+    menu.addItem((i) => i.setTitle("Percent").onClick(() => {
+      const m = new import_obsidian.Menu();
+      for (const op of ["percentEmpty", "percentNotEmpty"]) {
+        m.addItem((i2) => i2.setTitle(CALC_LABEL[op]).setChecked(this.ui.calc[key] === op).onClick(() => set(op)));
+      }
+      m.showAtMouseEvent(ev);
+    }));
+    menu.addItem((i) => i.setTitle("More options").onClick(() => {
+      const m = new import_obsidian.Menu();
+      for (const op of ["sum", "average", "median", "min", "max", "range"]) {
+        m.addItem((i2) => i2.setTitle(CALC_LABEL[op]).setChecked(this.ui.calc[key] === op).onClick(() => set(op)));
+      }
+      m.showAtMouseEvent(ev);
+    }));
+    menu.showAtMouseEvent(ev);
+  }
+  calcValue(key, op) {
+    const rows = this.visible;
+    const vals = rows.map((t) => this.cellValue(t, key, this.byIdAll));
+    const isEmpty = (v) => v === "" || v === null || v === void 0;
+    const nums = vals.filter((v) => typeof v === "number" && !Number.isNaN(v));
+    const round2 = (n) => Math.round(n * 100) / 100;
+    switch (op) {
+      case "countAll":
+        return String(rows.length);
+      case "countValues":
+      case "countNotEmpty":
+        return String(vals.filter((v) => !isEmpty(v)).length);
+      case "countUnique":
+        return String(new Set(vals.filter((v) => !isEmpty(v)).map((v) => String(v))).size);
+      case "countEmpty":
+        return String(vals.filter(isEmpty).length);
+      case "percentEmpty":
+        return rows.length ? `${Math.round(vals.filter(isEmpty).length / rows.length * 100)}%` : "0%";
+      case "percentNotEmpty":
+        return rows.length ? `${Math.round(vals.filter((v) => !isEmpty(v)).length / rows.length * 100)}%` : "0%";
+      case "sum":
+        return nums.length ? String(round2(nums.reduce((a, b) => a + b, 0))) : "0";
+      case "average":
+        return nums.length ? String(round2(nums.reduce((a, b) => a + b, 0) / nums.length)) : "–";
+      case "median": {
+        if (!nums.length) return "–";
+        const s = [...nums].sort((a, b) => a - b);
+        const mid = Math.floor(s.length / 2);
+        return String(round2(s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2));
+      }
+      case "min":
+        return nums.length ? String(round2(Math.min(...nums))) : "–";
+      case "max":
+        return nums.length ? String(round2(Math.max(...nums))) : "–";
+      case "range":
+        return nums.length ? String(round2(Math.max(...nums) - Math.min(...nums))) : "–";
+      default:
+        return "";
+    }
   }
   // Notion-style instant add: push a bare task and drop straight into editing its name, no modal.
   addTaskInline() {
@@ -2645,6 +2748,15 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
         off();
       } });
     }
+    item({
+      icon: "sigma",
+      label: "Calculate",
+      sub: ui.calc[key] ? CALC_LABEL[ui.calc[key]] : "None",
+      onClick: () => {
+        off();
+        this.calcMenu(ev, key);
+      }
+    });
     sep();
     const filterWrap = panel.createDiv("rt-colmenu-filter");
     const filterInput = filterWrap.createEl("input", { type: "text", attr: { placeholder: `Filter by ${def.label.toLowerCase()}…` } });
@@ -2746,6 +2858,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
             if (ui.frozenKey === key) ui.frozenKey = null;
             delete ui.colFilters[key];
             ui.wrapKeys = ui.wrapKeys.filter((k2) => k2 !== key);
+            delete ui.calc[key];
             for (const x of store.tasks) if (x.custom) delete x.custom[key];
             void this.plugin.save();
           }).open();
@@ -2784,6 +2897,12 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       } else if (e.key.startsWith("Arrow")) {
         e.preventDefault();
         this.moveCell(td, e.key);
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        this.copyCell(td);
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
+        e.preventDefault();
+        void this.pasteCell(td);
       } else if (!(e.ctrlKey || e.metaKey || e.altKey) && e.key.length === 1) {
         e.preventDefault();
         this.editCell(td, e.key);
@@ -2794,8 +2913,114 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       if (td) {
         td.addClass("is-cell-sel");
         if (this.restoreCellFocus) td.focus();
+        if (this.cellEditable(this.selCell.col)) {
+          const handle = td.createDiv("rt-fill-handle");
+          handle.addEventListener("pointerdown", (e) => this.startFillDrag(e, this.selCell.id, this.selCell.col, tb));
+        }
       }
     }
+  }
+  // Columns that are plain values (not a special editor like Status/Repeat/Comes after) support
+  // copy/paste and the fill handle, like Notion.
+  cellEditable(k) {
+    return k !== "status" && k !== "repeat" && k !== "after";
+  }
+  // The same string a cell would seed its text-input editor with (editCell's `value`), reused so
+  // copy, paste and the fill handle write values in the exact format applyCell expects.
+  cellEditValue(task, k, customType) {
+    if (k === "name") return task.title;
+    if (k === "group") return task.group;
+    if (k === "start") return hhmm(task.start);
+    if (k === "end") return hhmm(task.end >= DAY ? DAY - 1 : task.end);
+    if (k === "duration") return String(task.end - task.start);
+    if (k === "date") return task.date || task.from || this.dayStr;
+    if (customType === "checkbox") return task.custom[k] ? "true" : "";
+    return task.custom[k] === void 0 ? "" : String(task.custom[k]);
+  }
+  // Checkbox custom properties store a real boolean, not the text applyCell writes for everything
+  // else, so copy/paste/fill go through this instead of calling applyCell directly.
+  writeCellValue(task, k, v, customType) {
+    if (customType === "checkbox") {
+      task.custom = { ...task.custom, [k]: v === "true" };
+      return "";
+    }
+    return this.applyCell(task, k, v, customType);
+  }
+  copyCell(td) {
+    const k = td.dataset.col;
+    if (!this.cellEditable(k)) return;
+    const id = td.parentElement.dataset.id;
+    const task = this.plugin.store.tasks.find((x) => x.id === id);
+    if (!task) return;
+    const def = this.plugin.store.props[k];
+    const customType = def && def.custom ? def.type : null;
+    this.clipboardCell = { col: k, value: this.cellEditValue(task, k, customType) };
+  }
+  async pasteCell(td) {
+    const k = td.dataset.col;
+    if (!this.cellEditable(k) || !this.clipboardCell || this.clipboardCell.col !== k) return;
+    const id = td.parentElement.dataset.id;
+    const task = this.plugin.store.tasks.find((x) => x.id === id);
+    if (!task) return;
+    const def = this.plugin.store.props[k];
+    const customType = def && def.custom ? def.type : null;
+    const err = this.writeCellValue(task, k, this.clipboardCell.value, customType);
+    if (err) {
+      new import_obsidian.Notice(err);
+      return;
+    }
+    await this.plugin.save();
+  }
+  // Drag the handle at a selected cell's bottom-right corner down (or up) a column to copy its
+  // value into every cell it passes over, like Notion/Excel's fill handle.
+  startFillDrag(e, srcId, key, tb) {
+    e.preventDefault();
+    e.stopPropagation();
+    const srcTask = this.plugin.store.tasks.find((x) => x.id === srcId);
+    if (!srcTask) return;
+    const def = this.plugin.store.props[key];
+    const customType = def && def.custom ? def.type : null;
+    const srcVal = this.cellEditValue(srcTask, key, customType);
+    const rows = [...tb.querySelectorAll("tr.rt-tr")];
+    const srcIdx = rows.findIndex((r) => r.dataset.id === srcId);
+    if (srcIdx < 0) return;
+    let lastIdx = srcIdx;
+    const cellAt = (i) => rows[i] && rows[i].querySelector(`td[data-col="${key}"]`);
+    const highlight = (endIdx) => {
+      const lo = Math.min(srcIdx, endIdx), hi = Math.max(srcIdx, endIdx);
+      rows.forEach((r, i) => {
+        const td2 = cellAt(i);
+        if (td2) td2.toggleClass("is-fill-target", i >= lo && i <= hi && i !== srcIdx);
+      });
+    };
+    const onMove = (ev) => {
+      const el = document.elementFromPoint(ev.clientX, ev.clientY);
+      const tr = el && el.closest && el.closest("tr.rt-tr");
+      if (!tr) return;
+      const idx = rows.indexOf(tr);
+      if (idx < 0) return;
+      lastIdx = idx;
+      highlight(idx);
+    };
+    const onUp = async () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      rows.forEach((r, i) => {
+        const td2 = cellAt(i);
+        if (td2) td2.removeClass("is-fill-target");
+      });
+      const lo = Math.min(srcIdx, lastIdx), hi = Math.max(srcIdx, lastIdx);
+      if (lo === hi) return;
+      for (let i = lo; i <= hi; i++) {
+        if (i === srcIdx) continue;
+        const id = rows[i].dataset.id;
+        const task = this.plugin.store.tasks.find((x) => x.id === id);
+        if (task) this.writeCellValue(task, key, srcVal, customType);
+      }
+      await this.plugin.save();
+    };
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
   }
   selectCell(td) {
     this.host.querySelectorAll(".is-cell-sel").forEach((x) => x.removeClass("is-cell-sel"));

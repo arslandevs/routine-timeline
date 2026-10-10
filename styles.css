@@ -683,6 +683,28 @@
 	color: var(--text-faint);
 }
 
+/* Table footer: per-column calculate (Notion-style) */
+.rt-calcrow td {
+	border-top: 1px solid var(--rt-line);
+	padding: 3px 8px;
+	cursor: pointer;
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+}
+.rt-calcrow td:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-muted);
+}
+.rt-calcrow td.is-frozen {
+	position: sticky;
+	left: 36px;
+	z-index: 2;
+	background: var(--background-primary);
+}
+.rt-calc-val {
+	white-space: nowrap;
+}
+
 /* Board layout */
 .rt-board {
 	display: flex;
@@ -1105,13 +1127,17 @@
 	align-items: center;
 	gap: 8px;
 	width: 100%;
-	padding: 6px 8px;
+	padding: 7px 8px;
+	margin-bottom: 2px;
 	border-radius: 6px;
 	background: transparent;
 	box-shadow: none;
 	font-size: var(--font-ui-small);
 	color: var(--text-normal);
 	text-align: left;
+}
+.rt-colmenu-item:last-child {
+	margin-bottom: 0;
 }
 .rt-colmenu-item:hover {
 	background: var(--background-modifier-hover);
@@ -1644,6 +1670,24 @@
 .rt-table td.is-cell-sel {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: -2px;
+}
+/* Fill handle: drag the selected cell's corner dot down/up to copy its value, like Notion/Excel. */
+.rt-fill-handle {
+	position: absolute;
+	right: -4px;
+	bottom: -4px;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--interactive-accent);
+	border: 1.5px solid var(--background-primary);
+	cursor: crosshair;
+	z-index: 3;
+}
+.rt-table td.is-fill-target {
+	outline: 1px dashed var(--interactive-accent);
+	outline-offset: -1px;
+	background: var(--background-modifier-hover);
 }
 .rt-cell-input {
 	width: 100%;
