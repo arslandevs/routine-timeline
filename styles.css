@@ -831,6 +831,46 @@
 	background: var(--background-modifier-hover);
 }
 
+/* Conditional color: a matching row/bar is tinted with its rule's color. */
+.rt-tr.has-rule-color {
+	background: var(--rt-bg);
+}
+.rt-tr.has-rule-color.is-selected {
+	filter: brightness(0.96);
+}
+.rt-colorrule {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 2px;
+}
+.rt-colorrule select {
+	font-size: var(--font-ui-smaller);
+	max-width: 92px;
+}
+.rt-colorrule input[type="text"],
+.rt-colorrule input[type="number"] {
+	font-size: var(--font-ui-smaller);
+	width: 64px;
+}
+.rt-colorrule-sw {
+	width: 16px;
+	height: 16px;
+	border-radius: 4px;
+	border: none;
+	padding: 0;
+	cursor: pointer;
+	background: var(--rt-sw);
+	flex: 0 0 auto;
+}
+.rt-colorrule-sw.is-on {
+	outline: 2px solid var(--text-normal);
+	outline-offset: 1px;
+}
+.rt-colorrule-del {
+	margin-left: auto;
+}
+
 /* Selection pill (like Notion): count, delete, more, clear */
 .rt-selbar {
 	position: sticky;

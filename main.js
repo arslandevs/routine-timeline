@@ -177,7 +177,9 @@ const curve = (x1, y1, x2, y2) => {
   const dx = Math.max(24, Math.abs(x2 - x1) * 0.5);
   return `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`;
 };
-const defaultUi = () => ({ groupBy: "none", hideDone: false, groups: [], layout: "timeline", zoom: "day", cal: "month", sidebar: true, showTasks: true, sortKey: null, sortDir: "asc", colFilters: {}, frozenKey: null, wrapKeys: [] });
+const COLOR_OPS = ["eq", "neq", "contains", "empty", "notEmpty", "gt", "lt", "checked", "unchecked"];
+const cleanColorRules = (v) => Array.isArray(v) ? v.filter((r) => r && typeof r === "object" && typeof r.key === "string" && r.key && COLOR_OPS.includes(r.op) && COLORS.includes(r.color)).map((r) => ({ id: typeof r.id === "string" && r.id ? r.id : uid(), key: r.key, op: r.op, value: typeof r.value === "string" ? r.value : "", color: r.color })) : [];
+const defaultUi = () => ({ groupBy: "none", hideDone: false, groups: [], layout: "timeline", zoom: "day", cal: "month", sidebar: true, showTasks: true, sortKey: null, sortDir: "asc", colFilters: {}, frozenKey: null, wrapKeys: [], colorRules: [] });
 const cleanView = (v, fallbackName) => ({
   id: typeof v.id === "string" && v.id ? v.id : uid(),
   name: typeof v.name === "string" && v.name.trim() ? v.name.trim() : fallbackName || "View",
@@ -194,7 +196,9 @@ const cleanView = (v, fallbackName) => ({
   sortDir: v.sortDir === "desc" ? "desc" : "asc",
   colFilters: v.colFilters && typeof v.colFilters === "object" ? Object.fromEntries(Object.entries(v.colFilters).filter(([, s]) => typeof s === "string" && s.trim())) : {},
   frozenKey: typeof v.frozenKey === "string" && v.frozenKey ? v.frozenKey : null,
-  wrapKeys: Array.isArray(v.wrapKeys) ? v.wrapKeys.filter((k) => typeof k === "string") : []
+  wrapKeys: Array.isArray(v.wrapKeys) ? v.wrapKeys.filter((k) => typeof k === "string") : [],
+  // Highlight a row/bar by color when a property matches a rule. First matching rule wins.
+  colorRules: cleanColorRules(v.colorRules)
 });
 const cleanFeeds = (v) => Array.isArray(v) ? v.filter((f) => f && typeof f.url === "string" && f.url.trim()).map((f) => ({
   id: typeof f.id === "string" && f.id ? f.id : uid(),
@@ -726,7 +730,7 @@ const BoardChild = class extends import_obsidian.MarkdownRenderChild {
     this.board = null;
   }
   onload() {
-    let ui = { groupBy: this.o.groupBy, hideDone: this.o.hideDone, groups: this.o.groups, layout: this.o.layout, zoom: this.o.zoom, cal: this.o.cal, sidebar: false, showTasks: true, sortKey: null, sortDir: "asc", colFilters: {}, frozenKey: null, wrapKeys: [] };
+    let ui = { groupBy: this.o.groupBy, hideDone: this.o.hideDone, groups: this.o.groups, layout: this.o.layout, zoom: this.o.zoom, cal: this.o.cal, sidebar: false, showTasks: true, sortKey: null, sortDir: "asc", colFilters: {}, frozenKey: null, wrapKeys: [], colorRules: [] };
     if (this.o.view) {
       const v = this.plugin.store.views.find((x) => x.name.toLowerCase() === this.o.view.toLowerCase());
       if (v) ui = { ...v, groups: [...v.groups] };
@@ -927,6 +931,7 @@ const TimelineBoard = class {
     const dayTimeline = this.ui.layout === "timeline" && !sp;
     const inRange = sp ? (t) => t.date === null || t.date >= sp.startStr && t.date < sp.endStr : dayTimeline ? (t) => near.some((x) => occurs(t, x)) : (t) => occurs(t, this.day);
     const byIdAll = new Map(this.plugin.store.tasks.map((x) => [x.id, x]));
+    this.byIdAll = byIdAll;
     const taskIndex = new Map(this.plugin.store.tasks.map((x, i) => [x.id, i]));
     const colFilters = ui.layout === "table" ? Object.entries(ui.colFilters || {}) : [];
     this.visible = this.plugin.store.tasks.filter(inRange).filter((t) => !ui.hideDone || !this.isDone(t)).filter((t) => ui.groups.length === 0 || ui.groups.includes(groupLabel(t))).filter((t) => !q || t.title.toLowerCase().includes(q)).filter((t) => colFilters.every(([k, needle]) => String(this.cellValue(t, k, byIdAll)).toLowerCase().includes(needle.toLowerCase()))).sort((a, b) => {
@@ -1365,6 +1370,12 @@ const TimelineBoard = class {
         } else if (this.offPanel) this.offPanel();
       };
     }
+    panel.createDiv({ cls: "rt-panel-label rt-panel-gap", text: "Conditional color" });
+    const colorBtn = panel.createEl("button", { cls: "rt-addprop" });
+    (0, import_obsidian.setIcon)(colorBtn.createSpan(), "palette");
+    const n = this.ui.colorRules.length;
+    colorBtn.createSpan({ text: n ? `${n} rule${n > 1 ? "s" : ""}` : "Add rule" });
+    colorBtn.onclick = (ev) => this.colorRuleMenu(ev);
     const outside = (e) => {
       const target = e.target;
       if (!panel.contains(target) && !anchor.contains(target)) off();
@@ -2163,6 +2174,9 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       const tr = tb.createEl("tr", { cls: "rt-tr" });
       tr.toggleClass("is-done", this.isDone(t2));
       tr.toggleClass("is-selected", this.selected.has(t2.id));
+      const ruleColor = this.rowColor(t2, byId);
+      tr.toggleClass("has-rule-color", !!ruleColor);
+      if (ruleColor) tr.addClass(`rt-c-${ruleColor}`);
       const sel = tr.createEl("td", { cls: "rt-td-check" }).createEl("input", { cls: "rt-check rt-sel", type: "checkbox", attr: { "aria-label": "Select task" } });
       sel.checked = this.selected.has(t2.id);
       sel.onclick = (e) => e.stopPropagation();
@@ -2247,6 +2261,39 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     if (v === void 0 || v === null) return "";
     return String(v);
   }
+  // Conditional color: the first color rule (in order) whose condition matches a task wins, like
+  // Notion. Returns a COLORS entry or null if no rule matches.
+  matchRule(t2, rule, byId) {
+    const v = this.cellValue(t2, rule.key, byId);
+    switch (rule.op) {
+      case "empty":
+        return v === "" || v === null || v === void 0;
+      case "notEmpty":
+        return !(v === "" || v === null || v === void 0);
+      case "checked":
+        return String(v) === "true";
+      case "unchecked":
+        return String(v) !== "true";
+      case "eq":
+        return String(v).toLowerCase() === rule.value.trim().toLowerCase();
+      case "neq":
+        return String(v).toLowerCase() !== rule.value.trim().toLowerCase();
+      case "contains":
+        return String(v).toLowerCase().includes(rule.value.trim().toLowerCase());
+      case "gt":
+        return typeof v === "number" && v > Number(rule.value);
+      case "lt":
+        return typeof v === "number" && v < Number(rule.value);
+      default:
+        return false;
+    }
+  }
+  rowColor(t2, byId) {
+    for (const rule of this.ui.colorRules) {
+      if (this.matchRule(t2, rule, byId)) return rule.color;
+    }
+    return null;
+  }
   fillCell(td, t2, k, props, byId) {
     td.removeClass("rt-td-name");
     if (k === "name") {
@@ -2296,6 +2343,103 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       }));
     }
     menu.showAtMouseEvent(ev);
+  }
+  // Conditional color: highlight a row/bar when a property matches a rule, like Notion. A floating
+  // popover (appended to document.body, like the column menu) so typing a rule's value doesn't get
+  // interrupted by the re-renders each edit triggers.
+  colorRuleMenu(ev) {
+    if (this.offColorMenu) this.offColorMenu();
+    const ui = this.ui;
+    const props = this.plugin.store.props;
+    const OP_LABEL = { eq: "is", neq: "is not", contains: "contains", empty: "is empty", notEmpty: "is not empty", gt: ">", lt: "<", checked: "checked", unchecked: "unchecked" };
+    const panel = document.body.createDiv("rt-colmenu rt-colorpanel");
+    const pad = 8;
+    panel.style.visibility = "hidden";
+    const place = () => {
+      const r = panel.getBoundingClientRect();
+      const vw = window.innerWidth, vh = window.innerHeight;
+      let x = ev.clientX, y = ev.clientY;
+      if (x + r.width + pad > vw) x = vw - r.width - pad;
+      if (y + r.height + pad > vh) y = vh - r.height - pad;
+      panel.style.left = `${Math.max(pad, x)}px`;
+      panel.style.top = `${Math.max(pad, y)}px`;
+      panel.style.visibility = "visible";
+    };
+    const list = panel.createDiv("rt-colorrule-list");
+    const visibleProps = () => this.plugin.store.propOrder.filter((k) => props[k] && (k === "name" || props[k].visible));
+    const renderList = () => {
+      list.empty();
+      for (const rule of ui.colorRules) {
+        const row = list.createDiv("rt-colorrule");
+        const propSel = row.createEl("select");
+        for (const k of visibleProps()) propSel.createEl("option", { attr: { value: k }, text: props[k].label });
+        propSel.value = rule.key;
+        propSel.onchange = () => {
+          rule.key = propSel.value;
+          void this.plugin.save();
+        };
+        const opSel = row.createEl("select");
+        for (const op of COLOR_OPS) opSel.createEl("option", { attr: { value: op }, text: OP_LABEL[op] });
+        opSel.value = rule.op;
+        opSel.onchange = () => {
+          rule.op = opSel.value;
+          void this.plugin.save();
+          renderList();
+        };
+        if (!["empty", "notEmpty", "checked", "unchecked"].includes(rule.op)) {
+          const val = row.createEl("input", { type: "text", attr: { placeholder: "value" } });
+          val.value = rule.value;
+          val.onclick = (e) => e.stopPropagation();
+          val.onkeydown = (e) => e.stopPropagation();
+          val.oninput = () => {
+            rule.value = val.value;
+            void this.plugin.save();
+          };
+        }
+        const swatches = row.createDiv("rt-swatches");
+        for (const c of COLORS) {
+          const b = swatches.createEl("button", { cls: `rt-colorrule-sw rt-c-${c}`, attr: { "aria-label": c } });
+          b.toggleClass("is-on", rule.color === c);
+          b.onclick = () => {
+            rule.color = c;
+            void this.plugin.save();
+            renderList();
+          };
+        }
+        const del = row.createEl("button", { cls: "clickable-icon rt-colorrule-del", attr: { "aria-label": "Delete rule" } });
+        (0, import_obsidian.setIcon)(del, "trash-2");
+        del.onclick = () => {
+          ui.colorRules = ui.colorRules.filter((r) => r !== rule);
+          void this.plugin.save();
+          renderList();
+        };
+      }
+      if (ui.colorRules.length === 0) {
+        list.createDiv({ cls: "rt-panel-hint", text: "No rules yet. A matching rule highlights the row (Table) or bar (Timeline)." });
+      }
+    };
+    renderList();
+    const addBtn = panel.createEl("button", { cls: "rt-addprop" });
+    (0, import_obsidian.setIcon)(addBtn.createSpan(), "plus");
+    addBtn.createSpan({ text: "Add rule" });
+    addBtn.onclick = () => {
+      const firstKey = visibleProps()[0] || "name";
+      ui.colorRules = [...ui.colorRules, { id: uid(), key: firstKey, op: "eq", value: "", color: COLORS[0] }];
+      void this.plugin.save();
+      renderList();
+    };
+    document.body.appendChild(panel);
+    window.requestAnimationFrame(place);
+    const onOutside = (e) => {
+      if (!panel.contains(e.target)) off();
+    };
+    const off = () => {
+      document.removeEventListener("pointerdown", onOutside, true);
+      panel.remove();
+      this.offColorMenu = null;
+    };
+    document.addEventListener("pointerdown", onOutside, true);
+    this.offColorMenu = off;
   }
   // Notion-style column header popover: rename inline, change type, sort, filter, group, freeze, hide,
   // wrap, insert a property beside this one, duplicate it, or delete it. Replaces the old flat list of
@@ -3029,7 +3173,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
     if (!occurs(t, d)) return;
     this.markBarInstance(t.id, k);
     const key = ymd(d);
-    const bar = row.createDiv({ cls: `rt-bar is-neighbour rt-c-${t.color}` });
+    const bar = row.createDiv({ cls: `rt-bar is-neighbour rt-c-${this.rowColor(t, this.byIdAll) || t.color}` });
     bar.dataset.id = t.id;
     const done = t.doneDates.includes(t.date !== null ? t.date : key);
     bar.toggleClass("is-done", done);
@@ -3062,7 +3206,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
     this.markBarInstance(t.id, k);
     if (k === 0) {
       const isDone = this.isDone(t);
-      const bar = row.createDiv({ cls: `rt-bar rt-c-${t.color}` });
+      const bar = row.createDiv({ cls: `rt-bar rt-c-${this.rowColor(t, this.byIdAll) || t.color}` });
       bar.dataset.id = t.id;
       bar.toggleClass("is-done", isDone);
       bar.toggleClass("is-selected", this.selectedId === t.id);
@@ -3083,7 +3227,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
     }
     const d = new Date(this.day.getFullYear(), this.day.getMonth(), this.day.getDate() + k);
     const key = ymd(d);
-    const bar = row.createDiv({ cls: `rt-bar is-neighbour rt-c-${t.color}` });
+    const bar = row.createDiv({ cls: `rt-bar is-neighbour rt-c-${this.rowColor(t, this.byIdAll) || t.color}` });
     bar.dataset.id = t.id;
     const done = t.doneDates.includes(t.date !== null ? t.date : key);
     bar.toggleClass("is-done", done);
@@ -3110,7 +3254,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
     if (!occurs(t, this.day)) return;
     this.markBarInstance(t.id, 0);
     const isDone = this.isDone(t);
-    const bar = row.createDiv({ cls: `rt-bar rt-c-${t.color}` });
+    const bar = row.createDiv({ cls: `rt-bar rt-c-${this.rowColor(t, this.byIdAll) || t.color}` });
     bar.dataset.id = t.id;
     bar.toggleClass("is-done", isDone);
     bar.toggleClass("is-selected", this.selectedId === t.id);
