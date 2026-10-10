@@ -53,7 +53,8 @@ const parseHHMM = (s) => {
   return Number.isNaN(h) || Number.isNaN(m) ? null : h * 60 + m;
 };
 const hourLabel = (h) => `${h % 12 || 12} ${h < 12 ? "AM" : "PM"}`;
-const hourLabelShort = (h) => `${h % 12 || 12}${h < 12 ? "a" : "p"}`;
+const hourLabelShort = (h) => `${h % 12 || 12}${h < 12 ? "AM" : "PM"}`;
+const clockLabel = (min) => `${Math.floor(min / 60) % 12 || 12}:${String(min % 60).padStart(2, "0")} ${min < 720 ? "AM" : "PM"}`;
 const dayIndex = (d, start) => Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - start.getTime()) / 864e5);
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DEFAULT_LEN = 25;
@@ -1437,7 +1438,7 @@ const TimelineBoard = class {
     canvas.style.width = `${this.hw * 24}px`;
     canvas.style.backgroundSize = `${this.hw}px 100%`;
     const hours = canvas.createDiv("rt-hours");
-    const step = this.hw >= 30 ? 1 : 2;
+    const step = this.hw >= 40 ? 1 : 2;
     for (let h = 0; h < 24; h++) {
       const label = h % step !== 0 ? "" : this.hw >= 50 ? hourLabel(h) : hourLabelShort(h);
       const cell = hours.createDiv({ cls: "rt-hour", text: label });
@@ -1462,12 +1463,53 @@ const TimelineBoard = class {
     (0, import_obsidian.setIcon)(addBtn.createSpan(), "plus");
     addBtn.createSpan({ text: "New" });
     addBtn.onclick = () => this.addTask();
+    this.enableHoverAdd(canvas, rows);
     this.nowEl = null;
     if (this.dayStr === ymd(/* @__PURE__ */ new Date())) {
       this.nowEl = canvas.createDiv("rt-now");
       this.updateNow();
     }
     this.drawDeps();
+  }
+  // Hover an empty spot of the grid: a dashed 25-minute block shows at the start of that hour. Click it to add a task there.
+  enableHoverAdd(canvas, rows) {
+    const ghost = canvas.createDiv("rt-ghost");
+    ghost.style.display = "none";
+    let hour = null;
+    const skip = (t) => t.closest(".rt-bar, .rt-hours, .rt-new, .rt-ghead, .rt-empty, button, .rt-dot") || (t.closest(".rt-deps") && t.tagName !== "svg");
+    const at = (e) => {
+      if (skip(e.target)) return null;
+      const r = canvas.getBoundingClientRect();
+      const rr = rows.getBoundingClientRect();
+      const x = e.clientX - r.left;
+      const y = e.clientY - rr.top;
+      if (y < 0 || x < 0) return null;
+      return { h: Math.min(23, Math.floor(x / this.hw)), row: Math.floor(y / ROW_H) };
+    };
+    canvas.addEventListener("mousemove", (e) => {
+      const p = at(e);
+      if (!p) {
+        ghost.style.display = "none";
+        hour = null;
+        return;
+      }
+      hour = p.h;
+      ghost.style.display = "flex";
+      ghost.style.left = `${p.h * this.hw + 2}px`;
+      ghost.style.top = `${rows.offsetTop + p.row * ROW_H + 6}px`;
+      ghost.style.width = `${Math.max(Math.round(DEFAULT_LEN / 60 * this.hw), 74)}px`;
+      ghost.textContent = `+ ${clockLabel(p.h * 60)}`;
+    });
+    canvas.addEventListener("mouseleave", () => {
+      ghost.style.display = "none";
+      hour = null;
+    });
+    canvas.addEventListener("click", (e) => {
+      const p = at(e);
+      if (!p || hour === null) return;
+      ghost.style.display = "none";
+      this.addTask({ start: p.h * 60 });
+    });
   }
   renderHead(parent, item) {
     const h = parent.createDiv("rt-ghead");

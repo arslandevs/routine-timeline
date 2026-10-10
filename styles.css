@@ -386,6 +386,26 @@
 	background: var(--text-error);
 }
 
+/* Hover-to-add block on the timeline grid */
+.rt-ghost {
+	position: absolute;
+	z-index: 2;
+	height: 32px;
+	box-sizing: border-box;
+	align-items: center;
+	padding: 0 8px;
+	border: 1.5px dashed var(--interactive-accent);
+	border-radius: 8px;
+	background: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+	color: var(--interactive-accent);
+	font-size: var(--font-ui-smaller);
+	white-space: nowrap;
+	pointer-events: none;
+}
+.rt-canvas:has(.rt-ghost[style*="flex"]) {
+	cursor: copy;
+}
+
 /* New row */
 .rt-new {
 	position: sticky;

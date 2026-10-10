@@ -2,7 +2,7 @@
 
 A Notion-style task and routine planner for Obsidian. One set of tasks, four layouts (Table, Board, Timeline, Calendar), saved views in a tab bar, repeating tasks, a Google Calendar feed, and an inline block you can drop into any note.
 
-> **Status: early release (v0.11.2).** Every layout, zoom, editor and menu is covered by a headless DOM test, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
+> **Status: early release (v0.12.0).** Every layout, zoom, editor and menu is covered by a headless DOM test, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
 
 ## Install
 
@@ -52,6 +52,7 @@ Edit it like a spreadsheet.
 ### Timeline
 
 - Hour axis across the top, one row per task, and a **+ New** row at the bottom
+- **Hover any empty spot of the grid** and a dashed 25-minute block appears at the start of that hour (for example `+ 4:00 PM`). Click it to add a task there
 - **Zoom dropdown**: Hours, Day, Week, Bi-week, Month, Quarter, Year, 5 Years. **Day** fits all 24 hours without scrolling, **Hours** zooms in
 - **Week and larger** show one column per day. A repeating task appears only on the days it repeats: at its start time inside the day column in Week and Bi-week, and as a mark per day (consecutive days merge) in Month and larger. These zooms are read-only: click a bar to edit it
 - **Move and resize**: drag a bar to move it, drag either edge to change the start or end. Snaps to 15 minutes
