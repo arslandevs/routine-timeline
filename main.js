@@ -757,6 +757,7 @@ const TimelineBoard = class {
     this.yCenter = /* @__PURE__ */ new Map();
     this.totalH = 0;
     this.bars = /* @__PURE__ */ new Map();
+    this.barInstances = /* @__PURE__ */ new Map();
     this.scroller = null;
     this.rowsEl = null;
     this.svg = null;
@@ -986,6 +987,7 @@ const TimelineBoard = class {
     this.lastW = host.clientWidth;
     this.scroller = null;
     this.bars.clear();
+    this.barInstances.clear();
     this.sp = this.isSpan() ? this.spanInfo() : null;
     this.hw = this.ui.zoom === "hours" ? HOURS_W : Math.max(MIN_HOUR_W, Math.floor(this.availWidth() / 24));
     this.X0 = this.sp ? 0 : this.hw * 24;
@@ -2744,10 +2746,18 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     bar.title = `${t.title || "Untitled"}
 ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
   }
+  // A dependency arrow needs to know which of the three visible days (k) a bar actually landed on,
+  // since yesterday's and tomorrow's occurrences sit in their own columns, not under the selected day.
+  markBarInstance(id, k) {
+    const list = this.barInstances.get(id);
+    if (list) list.push(k);
+    else this.barInstances.set(id, [k]);
+  }
   // Yesterday's and tomorrow's occurrence of a task: shown beside today's, and fully editable once you scroll to that day.
   neighbourBar(row, t, k) {
     const d = new Date(this.day.getFullYear(), this.day.getMonth(), this.day.getDate() + k);
     if (!occurs(t, d)) return;
+    this.markBarInstance(t.id, k);
     const key = ymd(d);
     const bar = row.createDiv({ cls: `rt-bar is-neighbour rt-c-${t.color}` });
     bar.dataset.id = t.id;
@@ -2775,6 +2785,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
     this.neighbourBar(row, t, -1);
     this.neighbourBar(row, t, 1);
     if (!occurs(t, this.day)) return;
+    this.markBarInstance(t.id, 0);
     const isDone = this.isDone(t);
     const bar = row.createDiv({ cls: `rt-bar rt-c-${t.color}` });
     bar.dataset.id = t.id;
@@ -2917,16 +2928,26 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
     marker.appendChild(head);
     defs.appendChild(marker);
     svg.appendChild(defs);
-    const byId = new Map(this.visible.filter((t) => this.bars.has(t.id)).map((t) => [t.id, t]));
+    // Yesterday's and tomorrow's occurrences are drawn in their own day column, not under the selected
+    // day, so an arrow needs the day offset (k) both ends actually landed on, preferring the selected day.
+    const byId = new Map(this.visible.map((t) => [t.id, t]));
+    const sharedK = (aId, bId) => {
+      const as = this.barInstances.get(aId), bs = this.barInstances.get(bId);
+      if (!as || !bs) return null;
+      if (as.includes(0) && bs.includes(0)) return 0;
+      return as.find((k) => bs.includes(k)) ?? null;
+    };
     for (const t of this.visible) {
       const y2 = this.yCenter.get(t.id);
-      if (y2 === void 0 || !byId.has(t.id)) continue;
+      if (y2 === void 0 || !this.barInstances.has(t.id)) continue;
       for (const depId of t.deps) {
         const dep = byId.get(depId);
         const y1 = this.yCenter.get(depId);
-        if (!dep || y1 === void 0) continue;
-        const x1 = this.X0 + this.px(dep.end);
-        const x2 = this.X0 + this.px(t.start) - 2;
+        const k = dep ? sharedK(depId, t.id) : null;
+        if (!dep || y1 === void 0 || k === null) continue;
+        const dayX = this.X0 + k * this.hw * 24;
+        const x1 = dayX + this.px(dep.end);
+        const x2 = dayX + this.px(t.start) - 2;
         const d = curve(x1, y1, x2, y2);
         const key = `${depId}>${t.id}`;
         const selected = this.selectedLink === key;
