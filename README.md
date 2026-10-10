@@ -8,7 +8,7 @@ A Notion-style task and routine planner for Obsidian. One set of tasks, four lay
 
 **[⬇ Download the latest release](https://github.com/arslandevs/routine-timeline/releases/latest)** · [Install](#install) · [Views](#views) · [Repeating tasks](#tasks)
 
-> **Status: early release (v0.14.0).** Every layout, zoom, editor and menu is covered by a headless DOM test, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
+> **Status: early release (v0.16.0).** Every layout, zoom, editor and menu is covered by a headless DOM test, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
 
 ## What it looks like
 
@@ -50,11 +50,14 @@ Saved views sit in a tab bar at the top, like Notion: *Default view | Calendar |
 
 Edit it like a spreadsheet.
 
+- **New** adds a row instantly, like a fresh Notion page, and puts its name straight into editing. No popup
 - **Click a cell** to select it, then **type** to replace its value. **Enter** or double-click edits the current value, **Enter** saves, **Esc** cancels, and the **arrow keys** move between cells
 - **Status** is a colored chip. Click it to change the status
 - **OPEN**: hover a row's name and click **OPEN** to open the task in a side panel with every field plus a **Notes** box. Click anywhere outside the panel to close it. Valid edits are saved automatically
 - **Select rows** with the checkbox (hover a row to see it, or use the header box for all). A floating bar shows **N selected**, a trash icon and a **⋯** menu: *Mark as* any status, *Edit group & color*, *Duplicate*, *Delete*. Right-click a row for the same menu. Deleting asks you to confirm and removes any arrows pointing at the deleted tasks
+- **Click a column header** for its settings, Notion-style: rename it inline, **Change type** (your own properties only), **Sort** old→new or new→old, **Filter** by text, **Group by this** (Group and Status columns), **Freeze**, **Hide**, **Wrap content**, **Insert left/right**, **Duplicate property** and **Delete property**
 - **Drag a column header** to move that column. A blue line shows where it will land. Name always stays first
+- The **+** at the end of the header row adds a new property: text, number, checkbox, select or date
 
 ### Board
 
@@ -117,11 +120,10 @@ Events appear next to your tasks as solid colored cards, including repeating and
 
 ## Properties
 
-Open **View settings** (the sliders icon) → **Properties**.
+Click a column header in the **Table** layout for its settings (see above). From **View settings** (the sliders icon) → **Properties** you can also just **Add property**, for when Table isn't the active layout.
 
-- **Rename**, show or hide (eye), **reorder** (arrows or drag the table headers) and **add** properties
-- **System properties** (Name, Status, Date, Start, End, Duration (min), Group, Repeat, Comes after) can be renamed, reordered and hidden, but **not deleted**. Name is always first
-- **Add property** creates your own: text, number, checkbox, select or date. These can be deleted. Set their values in the task editor. They show as table columns
+- **System properties** (Name, Status, Date, Start, End, Duration (min), Group, Repeat, Comes after) can be renamed, hidden, frozen and sorted, but **not deleted** or retyped. Name is always first
+- Properties you add can be renamed, retyped, sorted, filtered, frozen, hidden, duplicated, reordered (drag the header) and deleted. Set their values in the task editor. They show as table columns
 - Names apply to the table headers, the task editor and the group menu in every view
 
 ## Groups and filters

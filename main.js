@@ -177,7 +177,7 @@ const curve = (x1, y1, x2, y2) => {
   const dx = Math.max(24, Math.abs(x2 - x1) * 0.5);
   return `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`;
 };
-const defaultUi = () => ({ groupBy: "none", hideDone: false, groups: [], layout: "timeline", zoom: "day", cal: "month", sidebar: true, showTasks: true });
+const defaultUi = () => ({ groupBy: "none", hideDone: false, groups: [], layout: "timeline", zoom: "day", cal: "month", sidebar: true, showTasks: true, sortKey: null, sortDir: "asc", colFilters: {}, frozenKey: null, wrapKeys: [] });
 const cleanView = (v, fallbackName) => ({
   id: typeof v.id === "string" && v.id ? v.id : uid(),
   name: typeof v.name === "string" && v.name.trim() ? v.name.trim() : fallbackName || "View",
@@ -188,7 +188,13 @@ const cleanView = (v, fallbackName) => ({
   hideDone: !!v.hideDone,
   groups: Array.isArray(v.groups) ? v.groups.filter((g) => typeof g === "string") : [],
   sidebar: v.sidebar !== false,
-  showTasks: v.showTasks !== false
+  showTasks: v.showTasks !== false,
+  // Table-only: column sort, per-column text filters, a frozen (sticky) column, and columns that wrap.
+  sortKey: typeof v.sortKey === "string" && v.sortKey ? v.sortKey : null,
+  sortDir: v.sortDir === "desc" ? "desc" : "asc",
+  colFilters: v.colFilters && typeof v.colFilters === "object" ? Object.fromEntries(Object.entries(v.colFilters).filter(([, s]) => typeof s === "string" && s.trim())) : {},
+  frozenKey: typeof v.frozenKey === "string" && v.frozenKey ? v.frozenKey : null,
+  wrapKeys: Array.isArray(v.wrapKeys) ? v.wrapKeys.filter((k) => typeof k === "string") : []
 });
 const cleanFeeds = (v) => Array.isArray(v) ? v.filter((f) => f && typeof f.url === "string" && f.url.trim()).map((f) => ({
   id: typeof f.id === "string" && f.id ? f.id : uid(),
@@ -720,7 +726,7 @@ const BoardChild = class extends import_obsidian.MarkdownRenderChild {
     this.board = null;
   }
   onload() {
-    let ui = { groupBy: this.o.groupBy, hideDone: this.o.hideDone, groups: this.o.groups, layout: this.o.layout, zoom: this.o.zoom, cal: this.o.cal, sidebar: false, showTasks: true };
+    let ui = { groupBy: this.o.groupBy, hideDone: this.o.hideDone, groups: this.o.groups, layout: this.o.layout, zoom: this.o.zoom, cal: this.o.cal, sidebar: false, showTasks: true, sortKey: null, sortDir: "asc", colFilters: {}, frozenKey: null, wrapKeys: [] };
     if (this.o.view) {
       const v = this.plugin.store.views.find((x) => x.name.toLowerCase() === this.o.view.toLowerCase());
       if (v) ui = { ...v, groups: [...v.groups] };
@@ -920,9 +926,18 @@ const TimelineBoard = class {
     const near = [-1, 0, 1].map((k) => new Date(dy.getFullYear(), dy.getMonth(), dy.getDate() + k));
     const dayTimeline = this.ui.layout === "timeline" && !sp;
     const inRange = sp ? (t) => t.date === null || t.date >= sp.startStr && t.date < sp.endStr : dayTimeline ? (t) => near.some((x) => occurs(t, x)) : (t) => occurs(t, this.day);
-    this.visible = this.plugin.store.tasks.filter(inRange).filter((t) => !ui.hideDone || !this.isDone(t)).filter((t) => ui.groups.length === 0 || ui.groups.includes(groupLabel(t))).filter((t) => !q || t.title.toLowerCase().includes(q)).sort((a, b) => {
+    const byIdAll = new Map(this.plugin.store.tasks.map((x) => [x.id, x]));
+    const colFilters = ui.layout === "table" ? Object.entries(ui.colFilters || {}) : [];
+    this.visible = this.plugin.store.tasks.filter(inRange).filter((t) => !ui.hideDone || !this.isDone(t)).filter((t) => ui.groups.length === 0 || ui.groups.includes(groupLabel(t))).filter((t) => !q || t.title.toLowerCase().includes(q)).filter((t) => colFilters.every(([k, needle]) => String(this.cellValue(t, k, byIdAll)).toLowerCase().includes(needle.toLowerCase()))).sort((a, b) => {
       // Row order must not depend on which of the three visible days is "selected" (this.day), or
       // rows reshuffle mid-scroll as the edge-watcher pages to a neighbour. Order by time of day only.
+      // The Table layout's column Sort overrides this, since its rows have no "day" concept.
+      if (ui.layout === "table" && ui.sortKey) {
+        const va = this.cellValue(a, ui.sortKey, byIdAll);
+        const vb = this.cellValue(b, ui.sortKey, byIdAll);
+        const cmp = typeof va === "number" && typeof vb === "number" ? va - vb : String(va).localeCompare(String(vb));
+        if (cmp) return ui.sortDir === "desc" ? -cmp : cmp;
+      }
       const byDate = sp ? (a.date || "").localeCompare(b.date || "") : 0;
       return byDate || a.start - b.start || a.end - b.end || a.title.localeCompare(b.title);
     });
@@ -1318,78 +1333,11 @@ const TimelineBoard = class {
       };
     }
     panel.createDiv({ cls: "rt-panel-label rt-panel-gap", text: "Properties" });
-    const store = this.plugin.store;
-    const props = store.props;
-    const order = store.propOrder;
-    const list = panel.createDiv("rt-props");
-    const commit = () => {
-      this.reopenPanel = true;
-      void this.plugin.save();
-    };
-    order.forEach((key, idx) => {
-      const def = props[key];
-      const row = list.createDiv("rt-prop");
-      const eye = row.createEl("button", { cls: "clickable-icon", attr: { "aria-label": key === "name" ? "Always shown" : "Show or hide in the table" } });
-      (0, import_obsidian.setIcon)(eye, def.visible ? "eye" : "eye-off");
-      if (key === "name") eye.disabled = true;
-      eye.onclick = () => {
-        def.visible = !def.visible;
-        commit();
-      };
-      const inp = row.createEl("input", { type: "text", cls: "rt-prop-input" });
-      inp.value = def.label;
-      inp.onchange = () => {
-        const v = inp.value.trim();
-        def.label = v || (def.custom ? CUSTOM_LABEL[def.type] : defaultProps()[key].label);
-        commit();
-      };
-      if (def.custom) row.createSpan({ cls: "rt-prop-type", text: CUSTOM_LABEL[def.type] });
-      const up = row.createEl("button", { cls: "clickable-icon", attr: { "aria-label": "Move up" } });
-      (0, import_obsidian.setIcon)(up, "arrow-up");
-      up.disabled = idx <= 1;
-      up.onclick = () => {
-        [order[idx - 1], order[idx]] = [order[idx], order[idx - 1]];
-        commit();
-      };
-      const down = row.createEl("button", { cls: "clickable-icon", attr: { "aria-label": "Move down" } });
-      (0, import_obsidian.setIcon)(down, "arrow-down");
-      down.disabled = key === "name" || idx >= order.length - 1;
-      down.onclick = () => {
-        [order[idx + 1], order[idx]] = [order[idx], order[idx + 1]];
-        commit();
-      };
-      const del = row.createEl("button", { cls: "clickable-icon rt-prop-del", attr: { "aria-label": "Delete property" } });
-      (0, import_obsidian.setIcon)(del, "trash-2");
-      if (!def.custom) {
-        del.disabled = true;
-        del.setAttribute("aria-label", "System property: you can hide it but not delete it");
-      }
-      del.onclick = () => {
-        if (!def.custom) return;
-        new ConfirmModal(this.app(), `Delete property "${def.label}"?`, "Its values are removed from every task. This cannot be undone.", async () => {
-          store.propOrder = order.filter((k) => k !== key);
-          delete props[key];
-          for (const x of store.tasks) if (x.custom) delete x.custom[key];
-          commit();
-        }).open();
-      };
-    });
+    panel.createDiv({ cls: "rt-panel-hint", text: "Click a column header in the Table layout to rename, change type, sort, filter, group, freeze, hide or delete a property." });
     const addProp = panel.createEl("button", { cls: "rt-addprop" });
     (0, import_obsidian.setIcon)(addProp.createSpan(), "plus");
     addProp.createSpan({ text: "Add property" });
-    addProp.onclick = (ev) => {
-      const menu = new import_obsidian.Menu();
-      for (const type of CUSTOM_TYPES) {
-        menu.addItem((i) => i.setTitle(`New ${CUSTOM_LABEL[type].toLowerCase()} property`).setIcon("plus").onClick(() => {
-          const key = `c_${uid().slice(0, 8)}`;
-          props[key] = { label: CUSTOM_LABEL[type], visible: true, type, custom: true };
-          order.push(key);
-          commit();
-        }));
-      }
-      menu.showAtMouseEvent(ev);
-    };
-    panel.createDiv({ cls: "rt-panel-hint", text: "System properties (Name, Status, Date, Start, End, Duration, Group, Repeat, Comes after) can be renamed, reordered and hidden with the eye, but not deleted. Properties you add can be deleted. Names apply to the table, task editor and menus in every view." });
+    addProp.onclick = (ev) => this.addPropertyMenu(ev, null);
     const outside = (e) => {
       const target = e.target;
       if (!panel.contains(target) && !anchor.contains(target)) off();
@@ -2092,7 +2040,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     const known = new Set(this.plugin.store.tasks.map((x) => x.id));
     for (const id of [...this.selected]) if (!known.has(id)) this.selected.delete(id);
     const cols = this.plugin.store.propOrder.filter((k) => props[k] && (k === "name" || props[k].visible));
-    const COLS = cols.length + 1;
+    const COLS = cols.length + 2;
     if (this.selected.size > 0) {
       const bar = body.createDiv("rt-selbar");
       bar.createSpan({ cls: "rt-selbar-n", text: `${this.selected.size} selected` });
@@ -2122,7 +2070,16 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       this.render();
     };
     for (const k of cols) {
-      const th = hr.createEl("th", { text: props[k].label });
+      const th = hr.createEl("th");
+      th.toggleClass("is-frozen", this.ui.frozenKey === k);
+      const label = th.createSpan("rt-th-label");
+      label.createSpan({ text: props[k].label });
+      if (this.ui.sortKey === k) (0, import_obsidian.setIcon)(label.createSpan(), this.ui.sortDir === "desc" ? "arrow-down" : "arrow-up");
+      if (this.ui.colFilters[k]) (0, import_obsidian.setIcon)(label.createSpan(), "filter");
+      th.onclick = (e) => {
+        e.stopPropagation();
+        this.propColumnMenu(e, k);
+      };
       if (k !== "name") this.makeSortable(th, "col", k, (dragged, after) => void this.plugin.moveProp(dragged, k, after));
       else th.addEventListener("dragover", (e) => {
         if (this.dragKind !== "col") return;
@@ -2140,6 +2097,12 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
         });
       }
     }
+    const addTh = hr.createEl("th", { cls: "rt-th-add", attr: { "aria-label": "Add property" } });
+    (0, import_obsidian.setIcon)(addTh, "plus");
+    addTh.onclick = (e) => {
+      e.stopPropagation();
+      this.addPropertyMenu(e, null);
+    };
     const tb = tbl.createEl("tbody");
     const byId = new Map(this.plugin.store.tasks.map((x) => [x.id, x]));
     for (const item of this.layout) {
@@ -2174,6 +2137,8 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
         const td = tr.createEl("td");
         td.dataset.col = k;
         td.tabIndex = 0;
+        td.toggleClass("is-frozen", this.ui.frozenKey === k);
+        td.toggleClass("is-wrap", this.ui.wrapKeys.includes(k));
         this.fillCell(td, t2, k, props, byId);
       }
       tr.oncontextmenu = (e) => {
@@ -2222,6 +2187,27 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     this.focusNewId = t.id;
     void this.plugin.save();
   }
+  // A plain, comparable value for a column: used by the table's column-header Sort and Filter, which
+  // work the same way regardless of how the cell happens to be drawn.
+  cellValue(t2, k, byId) {
+    if (k === "name") return t2.title || "Untitled";
+    if (k === "status") return this.statusOf(t2).name;
+    if (k === "date") {
+      const dd = t2.date || t2.from;
+      return dd || "";
+    }
+    if (k === "duration") return t2.end - t2.start;
+    if (k === "start") return t2.start;
+    if (k === "end") return t2.end;
+    if (k === "group") return t2.group || "";
+    if (k === "repeat") return repeatLabel(t2);
+    if (k === "after") return t2.deps.map((id) => (byId.get(id) || { title: "" }).title).filter(Boolean).join(", ");
+    const def = this.plugin.store.props[k];
+    const v = t2.custom[k];
+    if (def && def.type === "number") return typeof v === "number" ? v : null;
+    if (v === void 0 || v === null) return "";
+    return String(v);
+  }
   fillCell(td, t2, k, props, byId) {
     td.removeClass("rt-td-name");
     if (k === "name") {
@@ -2254,6 +2240,251 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     } else if (k === "repeat") td.textContent = repeatLabel(t2);
     else if (k === "after") td.textContent = t2.deps.map((id) => (byId.get(id) || { title: "" }).title).filter(Boolean).join(", ");
     else this.customCell(td, t2, k, props[k]);
+  }
+  // Pick a type for a brand new property, then insert it next to `afterKey` (or at the end if null).
+  addPropertyMenu(ev, afterKey) {
+    const menu = new import_obsidian.Menu();
+    for (const type of CUSTOM_TYPES) {
+      menu.addItem((i) => i.setTitle(`New ${CUSTOM_LABEL[type].toLowerCase()} property`).setIcon("plus").onClick(() => {
+        const store = this.plugin.store;
+        const key = `c_${uid().slice(0, 8)}`;
+        store.props[key] = { label: CUSTOM_LABEL[type], visible: true, type, custom: true };
+        const order = store.propOrder;
+        const at = afterKey ? order.indexOf(afterKey) : -1;
+        if (at >= 0) order.splice(at + 1, 0, key);
+        else order.push(key);
+        void this.plugin.save();
+      }));
+    }
+    menu.showAtMouseEvent(ev);
+  }
+  // Notion-style column header popover: rename inline, change type, sort, filter, group, freeze, hide,
+  // wrap, insert a property beside this one, duplicate it, or delete it. Replaces the old flat list of
+  // properties in View settings, which required leaving the table to reach any of this.
+  propColumnMenu(ev, key) {
+    if (this.offColMenu) this.offColMenu();
+    const store = this.plugin.store;
+    const props = store.props;
+    const def = props[key];
+    const ui = this.ui;
+    const isName = key === "name";
+    const panel = document.body.createDiv("rt-colmenu");
+    const pad = 8;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    panel.style.visibility = "hidden";
+    const place = () => {
+      const r = panel.getBoundingClientRect();
+      let left = ev.clientX;
+      let top = ev.clientY + 4;
+      if (left + r.width + pad > vw) left = vw - r.width - pad;
+      if (top + r.height + pad > vh) top = ev.clientY - r.height - 4;
+      panel.style.left = `${Math.max(pad, left)}px`;
+      panel.style.top = `${Math.max(pad, top)}px`;
+      panel.style.visibility = "visible";
+    };
+    const off = () => {
+      document.removeEventListener("pointerdown", onOutside, true);
+      panel.remove();
+      this.offColMenu = null;
+    };
+    const onOutside = (e) => {
+      if (!panel.contains(e.target)) off();
+    };
+    this.offColMenu = off;
+    const commit = () => void this.plugin.save();
+    const nameRow = panel.createDiv("rt-colmenu-name");
+    (0, import_obsidian.setIcon)(nameRow.createSpan(), "text-cursor-input");
+    const nameInput = nameRow.createEl("input", { type: "text" });
+    nameInput.value = def.label;
+    nameInput.onclick = (e) => e.stopPropagation();
+    const rename = () => {
+      const v = nameInput.value.trim();
+      def.label = v || (def.custom ? CUSTOM_LABEL[def.type] : defaultProps()[key].label);
+      void this.plugin.save();
+    };
+    nameInput.onblur = rename;
+    nameInput.onkeydown = (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter") {
+        rename();
+        off();
+      } else if (e.key === "Escape") off();
+    };
+    const item = (opts) => {
+      const b = panel.createEl("button", { cls: "rt-colmenu-item" });
+      if (opts.icon) (0, import_obsidian.setIcon)(b.createSpan(), opts.icon);
+      b.createSpan({ text: opts.label });
+      if (opts.on) b.addClass("is-on");
+      if (opts.sub) b.createSpan({ cls: "rt-colmenu-sub", text: opts.sub });
+      if (opts.danger) b.addClass("rt-colmenu-danger");
+      if (opts.disabled) b.disabled = true;
+      b.onclick = (e) => {
+        e.stopPropagation();
+        opts.onClick();
+      };
+      return b;
+    };
+    const sep = () => panel.createEl("hr", { cls: "rt-colmenu-sep" });
+    if (def.custom) {
+      item({
+        icon: "type",
+        label: "Change type",
+        sub: CUSTOM_LABEL[def.type],
+        onClick: (e2) => {
+          const m = new import_obsidian.Menu();
+          for (const type of CUSTOM_TYPES) {
+            m.addItem((i) => i.setTitle(CUSTOM_LABEL[type]).setChecked(def.type === type).onClick(() => {
+              // Follow the rename along if the label was still the type's own default (e.g. "Number").
+              if (def.label === CUSTOM_LABEL[def.type]) def.label = CUSTOM_LABEL[type];
+              def.type = type;
+              commit();
+              off();
+            }));
+          }
+          m.showAtMouseEvent(ev);
+        }
+      });
+    }
+    item({
+      icon: "arrow-up-narrow-wide",
+      label: "Sort old → new",
+      on: ui.sortKey === key && ui.sortDir === "asc",
+      onClick: () => {
+        ui.sortKey = key;
+        ui.sortDir = "asc";
+        commit();
+        off();
+      }
+    });
+    item({
+      icon: "arrow-down-wide-narrow",
+      label: "Sort new → old",
+      on: ui.sortKey === key && ui.sortDir === "desc",
+      onClick: () => {
+        ui.sortKey = key;
+        ui.sortDir = "desc";
+        commit();
+        off();
+      }
+    });
+    if (ui.sortKey === key) {
+      item({ icon: "x", label: "Clear sort", onClick: () => {
+        ui.sortKey = null;
+        commit();
+        off();
+      } });
+    }
+    sep();
+    const filterWrap = panel.createDiv("rt-colmenu-filter");
+    const filterInput = filterWrap.createEl("input", { type: "text", attr: { placeholder: `Filter by ${def.label.toLowerCase()}…` } });
+    filterInput.value = ui.colFilters[key] || "";
+    filterInput.onclick = (e) => e.stopPropagation();
+    filterInput.onkeydown = (e) => e.stopPropagation();
+    filterInput.oninput = () => {
+      const v = filterInput.value.trim();
+      if (v) ui.colFilters[key] = v;
+      else delete ui.colFilters[key];
+      void this.plugin.save();
+    };
+    if (key === "group" || key === "status") {
+      item({
+        icon: "layout-grid",
+        label: "Group by this",
+        on: ui.groupBy === key,
+        onClick: () => {
+          ui.groupBy = ui.groupBy === key ? "none" : key;
+          commit();
+          off();
+        }
+      });
+    }
+    item({
+      icon: "pin",
+      label: "Freeze",
+      on: ui.frozenKey === key,
+      onClick: () => {
+        ui.frozenKey = ui.frozenKey === key ? null : key;
+        commit();
+        off();
+      }
+    });
+    if (!isName) {
+      item({
+        icon: "eye-off",
+        label: "Hide",
+        onClick: () => {
+          def.visible = false;
+          commit();
+          off();
+        }
+      });
+    }
+    item({
+      icon: "wrap-text",
+      label: "Wrap content",
+      on: ui.wrapKeys.includes(key),
+      onClick: () => {
+        ui.wrapKeys = ui.wrapKeys.includes(key) ? ui.wrapKeys.filter((k2) => k2 !== key) : [...ui.wrapKeys, key];
+        commit();
+        off();
+      }
+    });
+    sep();
+    item({
+      icon: "arrow-left-to-line",
+      label: "Insert left",
+      onClick: (e2) => {
+        off();
+        const order = store.propOrder;
+        const at = order.indexOf(key);
+        this.addPropertyMenu(ev, at > 0 ? order[at - 1] : null);
+      }
+    });
+    item({
+      icon: "arrow-right-to-line",
+      label: "Insert right",
+      onClick: () => {
+        off();
+        this.addPropertyMenu(ev, key);
+      }
+    });
+    if (def.custom) {
+      item({
+        icon: "copy",
+        label: "Duplicate property",
+        onClick: () => {
+          const order = store.propOrder;
+          const newKey = `c_${uid().slice(0, 8)}`;
+          store.props[newKey] = { ...def, label: `${def.label} copy` };
+          order.splice(order.indexOf(key) + 1, 0, newKey);
+          for (const t of store.tasks) if (t.custom[key] !== void 0) t.custom = { ...t.custom, [newKey]: t.custom[key] };
+          commit();
+          off();
+        }
+      });
+      item({
+        icon: "trash-2",
+        label: "Delete property",
+        danger: true,
+        onClick: () => {
+          off();
+          new ConfirmModal(this.app(), `Delete property "${def.label}"?`, "Its values are removed from every task. This cannot be undone.", async () => {
+            store.propOrder = store.propOrder.filter((k2) => k2 !== key);
+            delete store.props[key];
+            if (ui.sortKey === key) ui.sortKey = null;
+            if (ui.frozenKey === key) ui.frozenKey = null;
+            delete ui.colFilters[key];
+            ui.wrapKeys = ui.wrapKeys.filter((k2) => k2 !== key);
+            for (const x of store.tasks) if (x.custom) delete x.custom[key];
+            void this.plugin.save();
+          }).open();
+        }
+      });
+    }
+    document.body.appendChild(panel);
+    place();
+    window.requestAnimationFrame(() => nameInput.focus());
+    document.addEventListener("pointerdown", onOutside, true);
   }
   // ---- Notion-style cells: click selects, type or Enter edits, arrows move, "OPEN" opens the side panel
   bindCells(tb) {
