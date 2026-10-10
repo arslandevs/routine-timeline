@@ -1,15 +1,28 @@
 # Routine Timeline
 
-A Notion-style task and routine planner for Obsidian. One set of tasks, four layouts (Table, Board, Timeline, Calendar), saved views in a tab bar, repeating tasks, a Google Calendar feed, and an inline block you can drop into any note.
+A Notion-style task and routine planner for Obsidian. One set of tasks, four layouts (Table, Board, Timeline, Calendar), saved views in a tab bar, repeating tasks you can tick off day by day, a Google Calendar feed, and an inline block you can drop into any note.
+
+<p align="center">
+  <img src="docs/screenshots/timeline-day.jpg" alt="Routine Timeline: plan your day on an hour-by-hour timeline" width="100%">
+</p>
+
+**[⬇ Download the latest release](https://github.com/arslandevs/routine-timeline/releases/latest)** · [Install](#install) · [Views](#views) · [Repeating tasks](#tasks)
 
 > **Status: early release (v0.13.0).** Every layout, zoom, editor and menu is covered by a headless DOM test, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
+
+## What it looks like
+
+| | |
+| --- | --- |
+| <img src="docs/screenshots/timeline-day.jpg" alt="Day timeline"><br>**Timeline**: lay tasks out hour by hour, with dependency arrows and a live "now" line | <img src="docs/screenshots/board.jpg" alt="Board view"><br>**Board**: status columns, drag cards between stages |
+| <img src="docs/screenshots/calendar-week.jpg" alt="Week calendar"><br>**Calendar**: day, week and month grids with several calendars | <img src="docs/screenshots/group-table.jpg" alt="Grouped table"><br>**Table**: group by category, with status, priority and duration |
+| <img src="docs/screenshots/timeline-week.jpg" alt="Week timeline"><br>**Week timeline**: repeating routines reappear on the days they repeat | <img src="docs/screenshots/timeline-month.jpg" alt="Month timeline"><br>**Month timeline**: see the whole month at a glance |
 
 ## Install
 
 ### From a release (easiest)
 
-1. Open the [latest release](https://github.com/arslandevs/routine-timeline/releases/latest) and download `main.js`, `manifest.json` and `styles.css`
-2. Put the three files in `<your vault>/.obsidian/plugins/routine-timeline/` (create the folder if needed)
+1. Open the [latest release](https://github.com/arslandevs/routine-timeline/releases/latest) and download **`routine-timeline-<version>.zip`**, then unzip it into `<your vault>/.obsidian/plugins/` (it creates the `routine-timeline` folder). Or download `main.js`, `manifest.json` and `styles.css` yourself and put the three files in `<your vault>/.obsidian/plugins/routine-timeline/`
 3. In Obsidian, go to **Settings → Community plugins** and enable **Routine Timeline**
 4. Open it from the ribbon icon, or run the command **Open timeline view**
 
@@ -33,6 +46,8 @@ Saved views sit in a tab bar at the top, like Notion: *Default view | Calendar |
 
 ### Table
 
+![Grouped table](docs/screenshots/group-table.jpg)
+
 Edit it like a spreadsheet.
 
 - **Click a cell** to select it, then **type** to replace its value. **Enter** or double-click edits the current value, **Enter** saves, **Esc** cancels, and the **arrow keys** move between cells
@@ -43,6 +58,8 @@ Edit it like a spreadsheet.
 
 ### Board
 
+![Board view](docs/screenshots/board.jpg)
+
 - Always shows the status columns **Not started**, **In progress** and **Done**, even when a column is empty, and each column has its own **+ New** button
 - Click a column title to rename it (Enter saves, Esc cancels). The **⋯** menu renames, recolors or deletes a column, and **Add column** creates more. The Done column can be renamed but not deleted
 - Drag a card to another column, or pick the **Status** in the task editor. Ticking a card's checkbox moves it to Done
@@ -50,6 +67,13 @@ Edit it like a spreadsheet.
 - Each status has its own color (Not started gray, In progress blue, Done green). The color also shows on the table's status chip
 
 ### Timeline
+
+![Week timeline](docs/screenshots/timeline-week.jpg)
+
+Zoom out from hours to a whole month or year:
+
+![Month timeline](docs/screenshots/timeline-month.jpg)
+![Year timeline](docs/screenshots/timeline-year.jpg)
 
 - Hour axis across the top, one row per task, and a **+ New** row at the bottom
 - **Hover any empty spot of the grid** and a dashed 25-minute block appears at the start of that hour (for example `+ 4:00 PM`). Click it to add a task there
@@ -62,6 +86,8 @@ Edit it like a spreadsheet.
 - Previous / Today / next steps by the current zoom (a day, a week, a month, and so on)
 
 ### Calendar
+
+![Week calendar](docs/screenshots/calendar-week.jpg)
 
 - **Day, Week and Month** grids (dropdown next to the date). Tasks appear on every day they occur, including repeats
 - Click an empty day or hour to add a task there. Click a chip to edit it
@@ -80,6 +106,8 @@ Events appear next to your tasks as solid colored cards, including repeating and
 
 ## Tasks
 
+![Repeat tasks every day](docs/screenshots/repeat-tasks.jpg)
+
 - **Repeat**: *Does not repeat*, *Every day* or *On specific days of the week* (for example only Tue and Thu). Choose when it **starts** and how long it lasts: **never ends**, **after a number of times** (for example 10) or **on a date**
 - A done checkbox and the status are tracked separately for each day
 - **New tasks** start at the time you pick and default to **25 minutes**. Changing the start moves the end with it until you set the end yourself
@@ -96,6 +124,8 @@ Open **View settings** (the sliders icon) → **Properties**.
 - Names apply to the table headers, the task editor and the group menu in every view
 
 ## Groups and filters
+
+![Organize tasks with groups](docs/screenshots/groups.jpg)
 
 A search box, a Filter menu (hide completed, pick groups) and a Group menu (none, by group, by status). Group headers collapse when clicked. The Group menu does not apply to the Board layout, which always groups by status.
 
