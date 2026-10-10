@@ -927,6 +927,7 @@ const TimelineBoard = class {
     const dayTimeline = this.ui.layout === "timeline" && !sp;
     const inRange = sp ? (t) => t.date === null || t.date >= sp.startStr && t.date < sp.endStr : dayTimeline ? (t) => near.some((x) => occurs(t, x)) : (t) => occurs(t, this.day);
     const byIdAll = new Map(this.plugin.store.tasks.map((x) => [x.id, x]));
+    const taskIndex = new Map(this.plugin.store.tasks.map((x, i) => [x.id, i]));
     const colFilters = ui.layout === "table" ? Object.entries(ui.colFilters || {}) : [];
     this.visible = this.plugin.store.tasks.filter(inRange).filter((t) => !ui.hideDone || !this.isDone(t)).filter((t) => ui.groups.length === 0 || ui.groups.includes(groupLabel(t))).filter((t) => !q || t.title.toLowerCase().includes(q)).filter((t) => colFilters.every(([k, needle]) => String(this.cellValue(t, k, byIdAll)).toLowerCase().includes(needle.toLowerCase()))).sort((a, b) => {
       // Row order must not depend on which of the three visible days is "selected" (this.day), or
@@ -946,7 +947,9 @@ const TimelineBoard = class {
         return 0;
       }
       const byDate = sp ? (a.date || "").localeCompare(b.date || "") : 0;
-      return byDate || a.start - b.start || a.end - b.end || a.title.localeCompare(b.title);
+      // Tasks tied on date/start/end keep the order they were created in (newest last), instead
+      // of alphabetical, so a newly added task lands below its same-time siblings as expected.
+      return byDate || a.start - b.start || a.end - b.end || taskIndex.get(a.id) - taskIndex.get(b.id);
     });
     this.layout = [];
     this.yCenter.clear();
