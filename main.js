@@ -2185,8 +2185,39 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     const addBtn = add.createEl("button", { cls: "rt-new-btn" });
     (0, import_obsidian.setIcon)(addBtn.createSpan(), "plus");
     addBtn.createSpan({ text: "New" });
-    addBtn.onclick = () => this.addTask();
+    addBtn.onclick = () => this.addTaskInline();
     this.bindCells(tb);
+    if (this.focusNewId) {
+      const id = this.focusNewId;
+      this.focusNewId = null;
+      const td = tb.querySelector(`tr[data-id="${id}"] td[data-col="name"]`);
+      if (td) window.requestAnimationFrame(() => this.editCell(td));
+    }
+  }
+  // Notion-style instant add: push a bare task and drop straight into editing its name, no modal.
+  addTaskInline() {
+    const dayStr = this.dayStr;
+    const t = {
+      id: uid(),
+      title: "",
+      start: 9 * 60,
+      end: 9 * 60 + DEFAULT_LEN,
+      date: dayStr,
+      days: null,
+      from: null,
+      until: null,
+      count: null,
+      custom: {},
+      notes: "",
+      deps: [],
+      group: this.defaultGroup(),
+      color: COLORS[Math.floor(Math.random() * COLORS.length)],
+      doneDates: [],
+      st: {}
+    };
+    this.plugin.store.tasks.push(t);
+    this.focusNewId = t.id;
+    void this.plugin.save();
   }
   fillCell(td, t2, k, props, byId) {
     td.removeClass("rt-td-name");
