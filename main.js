@@ -762,6 +762,9 @@ const TimelineBoard = class {
     this.svg = null;
     this.nowEl = null;
     this.initialScroll = true;
+    this.pendingShift = false;
+    this.X0 = 0;
+    this.winStart = null;
     this.selectedId = null;
     this.selectedLink = null;
     this.collapsed = /* @__PURE__ */ new Set();
@@ -813,9 +816,8 @@ const TimelineBoard = class {
     return Math.max(300, (this.host.clientWidth || 900) - 2);
   }
   // Date range, column width and header cells for week / month / year style zooms.
-  spanInfo() {
+  spanBase(d, forceW) {
     const z = this.ui.zoom;
-    const d = this.day;
     const y = d.getFullYear();
     const m = d.getMonth();
     let start;
@@ -837,7 +839,7 @@ const TimelineBoard = class {
       end = new Date(y + 5, 0, 1);
     }
     const n = dayIndex(end, start);
-    const dayW = Math.max(ZOOM_MIN_DAY_W[z], this.availWidth() / n);
+    const dayW = forceW || Math.max(ZOOM_MIN_DAY_W[z], this.availWidth() / n);
     const unit = z === "5years" ? "year" : z === "quarter" || z === "year" ? "month" : "day";
     const cells = [];
     if (unit === "day") {
@@ -877,6 +879,21 @@ const TimelineBoard = class {
     else label = `${start.getFullYear()} – ${last.getFullYear()}`;
     return { start, n, dayW, total: n * dayW, cells, label, startStr: ymd(start), endStr: ymd(end) };
   }
+  // The visible range is three periods wide (previous, current, next) so you can scroll on into the past and future.
+  spanInfo() {
+    const cur = this.spanBase(this.day);
+    const dayW = cur.dayW;
+    const prev = this.spanBase(this.stepOf(this.day, -1), dayW);
+    const next = this.spanBase(this.stepOf(this.day, 1), dayW);
+    const start = prev.start;
+    const cells = [];
+    for (const part of [prev, cur, next]) {
+      const off = dayIndex(part.start, start) * dayW;
+      for (const c of part.cells) cells.push({ ...c, left: c.left + off });
+    }
+    const n = prev.n + cur.n + next.n;
+    return { start, n, dayW, total: n * dayW, cells, label: cur.label, startStr: prev.startStr, endStr: next.endStr, i0: prev.n, n0: cur.n };
+  }
   statusKey(t) {
     return t.date !== null ? t.date : this.sp ? ymd(/* @__PURE__ */ new Date()) : this.dayStr;
   }
@@ -886,9 +903,9 @@ const TimelineBoard = class {
   statusOf(t) {
     return statusOf(t, this.statusKey(t), this.plugin.store.statuses);
   }
-  async toggleDone(t, on) {
+  async toggleDone(t, on, dayKey = this.dayStr) {
     const sts = this.plugin.store.statuses;
-    withStatus(t, this.dayStr, on ? doneStatus(sts) : sts[0], sts);
+    withStatus(t, dayKey, on ? doneStatus(sts) : sts[0], sts);
     await this.plugin.save();
   }
   // ---- data for the current day -------------------------------------------------
@@ -898,10 +915,14 @@ const TimelineBoard = class {
     const q = this.q.trim().toLowerCase();
     const ui = this.ui;
     const sp = this.sp;
-    const inRange = sp ? (t) => t.date === null || t.date >= sp.startStr && t.date < sp.endStr : (t) => occurs(t, this.day);
+    const dy = this.day;
+    const near = [-1, 0, 1].map((k) => new Date(dy.getFullYear(), dy.getMonth(), dy.getDate() + k));
+    const dayTimeline = this.ui.layout === "timeline" && !sp;
+    const inRange = sp ? (t) => t.date === null || t.date >= sp.startStr && t.date < sp.endStr : dayTimeline ? (t) => near.some((x) => occurs(t, x)) : (t) => occurs(t, this.day);
     this.visible = this.plugin.store.tasks.filter(inRange).filter((t) => !ui.hideDone || !this.isDone(t)).filter((t) => ui.groups.length === 0 || ui.groups.includes(groupLabel(t))).filter((t) => !q || t.title.toLowerCase().includes(q)).sort((a, b) => {
       const byDate = sp ? (a.date || "").localeCompare(b.date || "") : 0;
-      return byDate || a.start - b.start || a.end - b.end;
+      const today = dayTimeline ? Number(!occurs(a, this.day)) - Number(!occurs(b, this.day)) : 0;
+      return byDate || today || a.start - b.start || a.end - b.end;
     });
     this.layout = [];
     this.yCenter.clear();
@@ -966,6 +987,10 @@ const TimelineBoard = class {
     this.bars.clear();
     this.sp = this.isSpan() ? this.spanInfo() : null;
     this.hw = this.ui.zoom === "hours" ? HOURS_W : Math.max(MIN_HOUR_W, Math.floor(this.availWidth() / 24));
+    this.X0 = this.sp ? 0 : this.hw * 24;
+    const oldWin = this.winStart;
+    const dd = this.day;
+    this.winStart = this.sp ? this.sp.start : new Date(dd.getFullYear(), dd.getMonth(), dd.getDate() - 1);
     this.compute();
     this.renderTabs(host);
     this.renderToolbar(host);
@@ -993,12 +1018,17 @@ const TimelineBoard = class {
       let left = 0;
       if (this.sp) {
         const i = dayIndex(n, this.sp.start);
-        if (i >= 0 && i < this.sp.n) left = Math.max(0, i * this.sp.dayW - 60);
+        left = i >= this.sp.i0 && i < this.sp.i0 + this.sp.n0 ? Math.max(0, i * this.sp.dayW - 60) : this.sp.i0 * this.sp.dayW;
       } else if (this.scroller) {
         const startHour = this.dayStr === ymd(n) ? Math.max(0, n.getHours() - 1) : 6;
-        left = startHour * this.hw;
+        left = this.X0 + startHour * this.hw;
       }
       window.requestAnimationFrame(() => scroller.scrollLeft = left);
+    } else if (this.pendingShift && this.scroller && oldWin) {
+      this.pendingShift = false;
+      const w = this.sp ? this.sp.dayW : this.hw * 24;
+      scroller.scrollLeft = prevLeft + dayIndex(oldWin, this.winStart) * w;
+      scroller.scrollTop = prevTop;
     } else {
       scroller.scrollLeft = prevLeft;
       scroller.scrollTop = prevTop;
@@ -1435,16 +1465,39 @@ const TimelineBoard = class {
       }
     });
     const canvas = scroller.createDiv("rt-canvas");
-    canvas.style.width = `${this.hw * 24}px`;
+    const dayPx = this.hw * 24;
+    canvas.style.width = `${dayPx * 3}px`;
     canvas.style.backgroundSize = `${this.hw}px 100%`;
+    // Yesterday, today and tomorrow side by side: keep scrolling to move on to the next day.
+    for (const k of [0, 2]) {
+      const shade = canvas.createDiv("rt-dayshade");
+      shade.style.left = `${k * dayPx}px`;
+      shade.style.width = `${dayPx}px`;
+    }
+    for (const k of [1, 2]) {
+      const line = canvas.createDiv("rt-vline is-day");
+      line.style.left = `${k * dayPx}px`;
+    }
     const hours = canvas.createDiv("rt-hours");
     const step = this.hw >= 40 ? 1 : 2;
-    for (let h = 0; h < 24; h++) {
-      const label = h % step !== 0 ? "" : this.hw >= 50 ? hourLabel(h) : hourLabelShort(h);
+    const todayKey = ymd(/* @__PURE__ */ new Date());
+    for (let g = 0; g < 72; g++) {
+      const h = g % 24;
+      const k = Math.floor(g / 24) - 1;
+      let label = h % step !== 0 ? "" : this.hw >= 50 ? hourLabel(h) : hourLabelShort(h);
+      let isToday = false;
+      if (h === 0) {
+        const dt = new Date(this.day.getFullYear(), this.day.getMonth(), this.day.getDate() + k);
+        label = dt.toLocaleDateString(void 0, { weekday: "short", day: "numeric" });
+        isToday = ymd(dt) === todayKey;
+      }
       const cell = hours.createDiv({ cls: "rt-hour", text: label });
-      cell.style.left = `${h * this.hw}px`;
+      cell.toggleClass("is-today", isToday);
+      cell.toggleClass("is-daystart", h === 0);
+      cell.style.left = `${g * this.hw}px`;
       cell.style.width = `${this.hw}px`;
     }
+    this.watchEdges(scroller);
     const rows = canvas.createDiv("rt-rows");
     this.rowsEl = rows;
     const svg = document.createElementNS(SVG_NS, "svg");
@@ -1464,11 +1517,8 @@ const TimelineBoard = class {
     addBtn.createSpan({ text: "New" });
     addBtn.onclick = () => this.addTask();
     this.enableHoverAdd(canvas, rows);
-    this.nowEl = null;
-    if (this.dayStr === ymd(/* @__PURE__ */ new Date())) {
-      this.nowEl = canvas.createDiv("rt-now");
-      this.updateNow();
-    }
+    this.nowEl = canvas.createDiv("rt-now");
+    this.updateNow();
     this.drawDeps();
   }
   // Hover an empty spot of the grid: a dashed 25-minute block shows at the start of that hour. Click it to add a task there.
@@ -1484,7 +1534,8 @@ const TimelineBoard = class {
       const x = e.clientX - r.left;
       const y = e.clientY - rr.top;
       if (y < 0 || x < 0) return null;
-      return { h: Math.min(23, Math.floor(x / this.hw)), row: Math.floor(y / ROW_H) };
+      const g = Math.min(71, Math.floor(x / this.hw));
+      return { h: g % 24, g, k: Math.floor(g / 24) - 1, row: Math.floor(y / ROW_H) };
     };
     canvas.addEventListener("mousemove", (e) => {
       const p = at(e);
@@ -1495,7 +1546,7 @@ const TimelineBoard = class {
       }
       hour = p.h;
       ghost.style.display = "flex";
-      ghost.style.left = `${p.h * this.hw + 2}px`;
+      ghost.style.left = `${p.g * this.hw + 2}px`;
       ghost.style.top = `${rows.offsetTop + p.row * ROW_H + 6}px`;
       ghost.style.width = `${Math.max(Math.round(DEFAULT_LEN / 60 * this.hw), 74)}px`;
       ghost.textContent = `+ ${clockLabel(p.h * 60)}`;
@@ -1508,7 +1559,8 @@ const TimelineBoard = class {
       const p = at(e);
       if (!p || hour === null) return;
       ghost.style.display = "none";
-      this.addTask({ start: p.h * 60 });
+      const dd = new Date(this.day.getFullYear(), this.day.getMonth(), this.day.getDate() + p.k);
+      this.addTask({ start: p.h * 60, date: ymd(dd) });
     });
   }
   renderHead(parent, item) {
@@ -1535,6 +1587,7 @@ const TimelineBoard = class {
       if (this.selectedId) this.select(null);
     });
     const canvas = scroller.createDiv("rt-canvas is-span");
+    this.watchEdges(scroller);
     canvas.style.width = `${sp.total}px`;
     canvas.style.backgroundImage = "none";
     for (const c of sp.cells) {
@@ -2564,23 +2617,50 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     withStatus(t, this.dayStr, status, this.plugin.store.statuses);
     await this.plugin.save();
   }
-  shift(n) {
-    const d = this.day;
+  // The date one period before or after `d` (a day, week, month... depending on the zoom).
+  stepOf(d, n) {
     const y = d.getFullYear();
     const m = d.getMonth();
     const z = this.ui.zoom;
     if (this.ui.layout === "calendar") {
-      if (this.ui.cal === "month") this.day = new Date(y, m + n, 1);
-      else this.day = new Date(y, m, d.getDate() + (this.ui.cal === "week" ? 7 : 1) * n);
-    } else if (!this.sp) this.day = new Date(y, m, d.getDate() + n);
-    else if (z === "week") this.day = new Date(y, m, d.getDate() + 7 * n);
-    else if (z === "biweek") this.day = new Date(y, m, d.getDate() + 14 * n);
-    else if (z === "month") this.day = new Date(y, m + n, 1);
-    else if (z === "quarter") this.day = new Date(y, m + 3 * n, 1);
-    else if (z === "year") this.day = new Date(y + n, 0, 1);
-    else this.day = new Date(y + 5 * n, 0, 1);
+      if (this.ui.cal === "month") return new Date(y, m + n, 1);
+      return new Date(y, m, d.getDate() + (this.ui.cal === "week" ? 7 : 1) * n);
+    }
+    if (!this.sp && !this.isSpan()) return new Date(y, m, d.getDate() + n);
+    if (z === "week") return new Date(y, m, d.getDate() + 7 * n);
+    if (z === "biweek") return new Date(y, m, d.getDate() + 14 * n);
+    if (z === "month") return new Date(y, m + n, 1);
+    if (z === "quarter") return new Date(y, m + 3 * n, 1);
+    if (z === "year") return new Date(y + n, 0, 1);
+    return new Date(y + 5 * n, 0, 1);
+  }
+  shift(n) {
+    this.day = this.stepOf(this.day, n);
     this.initialScroll = true;
     this.render();
+  }
+  // Scrolled past the current day/period: move on to the neighbour and keep the same spot on screen.
+  pageBy(n) {
+    this.pendingShift = true;
+    this.day = this.stepOf(this.day, n);
+    this.render();
+  }
+  watchEdges(scroller) {
+    let timer = 0;
+    const check = () => {
+      const cw = scroller.clientWidth;
+      if (!cw || !scroller.isConnected) return;
+      const c = scroller.scrollLeft + cw / 2;
+      const x0 = this.sp ? this.sp.i0 * this.sp.dayW : this.hw * 24;
+      const len = this.sp ? this.sp.n0 * this.sp.dayW : this.hw * 24;
+      if (c < x0) this.pageBy(-1);
+      else if (c >= x0 + len) this.pageBy(1);
+    };
+    scroller.addEventListener("scroll", () => {
+      window.clearTimeout(timer);
+      const atEdge = scroller.scrollLeft <= 2 || scroller.scrollLeft + scroller.clientWidth >= scroller.scrollWidth - 2;
+      timer = window.setTimeout(check, atEdge ? 0 : 140);
+    });
   }
   updateNow() {
     if (this.calNow) this.updateCalNow();
@@ -2591,7 +2671,9 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       const i = dayIndex(d, this.sp.start);
       this.nowEl.style.left = `${i * this.sp.dayW + mins / 1440 * this.sp.dayW}px`;
     } else {
-      this.nowEl.style.left = `${this.px(mins)}px`;
+      const i = this.winStart ? dayIndex(d, this.winStart) : 1;
+      this.nowEl.style.display = i >= 0 && i < 3 ? "" : "none";
+      this.nowEl.style.left = `${i * this.hw * 24 + this.px(mins)}px`;
     }
   }
   select(id) {
@@ -2614,9 +2696,9 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     }
     return str.length * 7;
   }
-  place(bar, t) {
+  place(bar, t, off = this.X0) {
     const w = this.px(t.end - t.start);
-    const left = this.px(t.start);
+    const left = off + this.px(t.start);
     bar.style.left = `${left}px`;
     bar.style.width = `${w}px`;
     bar.toggleClass("is-narrow", w < 70);
@@ -2626,13 +2708,41 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     const fits = w >= tw + 28 + 20 + 6;
     bar.toggleClass("has-out", !fits);
     // Near the end of the day it would run off the grid, so it ends at the box's right edge and runs left instead.
-    bar.toggleClass("out-left", !fits && left + tw + 40 > this.hw * 24 && left + w - tw - 40 > 0);
+    bar.toggleClass("out-left", !fits && left + tw + 40 > this.hw * 72 && left + w - tw - 40 > 0);
     bar.title = `${t.title || "Untitled"}
 ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
+  }
+  // Yesterday's and tomorrow's occurrence of a task: shown beside today's, and fully editable once you scroll to that day.
+  neighbourBar(row, t, k) {
+    const d = new Date(this.day.getFullYear(), this.day.getMonth(), this.day.getDate() + k);
+    if (!occurs(t, d)) return;
+    const key = ymd(d);
+    const bar = row.createDiv({ cls: `rt-bar is-neighbour rt-c-${t.color}` });
+    bar.dataset.id = t.id;
+    const done = t.doneDates.includes(t.date !== null ? t.date : key);
+    bar.toggleClass("is-done", done);
+    const inner = bar.createDiv("rt-bar-in");
+    const cb = inner.createEl("input", { cls: "rt-check", type: "checkbox" });
+    cb.checked = done;
+    cb.onchange = () => void this.toggleDone(t, cb.checked, key);
+    inner.createSpan({ cls: "rt-title", text: t.title || "Untitled" });
+    if (t.date === null) (0, import_obsidian.setIcon)(inner.createSpan({ cls: "rt-repeat" }), "repeat");
+    this.place(bar, t, this.X0 + k * this.hw * 24);
+    bar.onclick = (e) => {
+      if (e.target.closest("input")) return;
+      // The editor takes the day it is for (its status is per day); put today's back straight after.
+      const keep = this.dayStr;
+      this.dayStr = key;
+      this.editTask(t);
+      this.dayStr = keep;
+    };
   }
   renderTask(parent, t) {
     const row = parent.createDiv("rt-row");
     row.style.height = `${ROW_H}px`;
+    this.neighbourBar(row, t, -1);
+    this.neighbourBar(row, t, 1);
+    if (!occurs(t, this.day)) return;
     const isDone = this.isDone(t);
     const bar = row.createDiv({ cls: `rt-bar rt-c-${t.color}` });
     bar.dataset.id = t.id;
@@ -2721,7 +2831,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
       const y1 = this.yCenter.get(t.id);
       if (!svg || !rows || y1 === void 0) return;
       link.setPointerCapture(e.pointerId);
-      const x1 = this.px(t.end);
+      const x1 = this.X0 + this.px(t.end);
       const temp = document.createElementNS(SVG_NS, "path");
       temp.classList.add("rt-dep", "is-temp");
       svg.appendChild(temp);
@@ -2758,7 +2868,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
     const svg = this.svg;
     if (!svg) return;
     while (svg.firstChild) svg.removeChild(svg.firstChild);
-    svg.setAttribute("width", String(this.hw * 24));
+    svg.setAttribute("width", String(this.hw * 72));
     svg.setAttribute("height", String(this.totalH));
     const defs = document.createElementNS(SVG_NS, "defs");
     const marker = document.createElementNS(SVG_NS, "marker");
@@ -2775,16 +2885,16 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
     marker.appendChild(head);
     defs.appendChild(marker);
     svg.appendChild(defs);
-    const byId = new Map(this.visible.map((t) => [t.id, t]));
+    const byId = new Map(this.visible.filter((t) => this.bars.has(t.id)).map((t) => [t.id, t]));
     for (const t of this.visible) {
       const y2 = this.yCenter.get(t.id);
-      if (y2 === void 0) continue;
+      if (y2 === void 0 || !byId.has(t.id)) continue;
       for (const depId of t.deps) {
         const dep = byId.get(depId);
         const y1 = this.yCenter.get(depId);
         if (!dep || y1 === void 0) continue;
-        const x1 = this.px(dep.end);
-        const x2 = this.px(t.start) - 2;
+        const x1 = this.X0 + this.px(dep.end);
+        const x2 = this.X0 + this.px(t.start) - 2;
         const d = curve(x1, y1, x2, y2);
         const key = `${depId}>${t.id}`;
         const selected = this.selectedLink === key;

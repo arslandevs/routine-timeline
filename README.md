@@ -8,7 +8,7 @@ A Notion-style task and routine planner for Obsidian. One set of tasks, four lay
 
 **[⬇ Download the latest release](https://github.com/arslandevs/routine-timeline/releases/latest)** · [Install](#install) · [Views](#views) · [Repeating tasks](#tasks)
 
-> **Status: early release (v0.13.0).** Every layout, zoom, editor and menu is covered by a headless DOM test, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
+> **Status: early release (v0.14.0).** Every layout, zoom, editor and menu is covered by a headless DOM test, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
 
 ## What it looks like
 
@@ -83,6 +83,7 @@ Zoom out from hours to a whole month or year:
 - **Move and resize**: drag a bar to move it, drag either edge to change the start or end. Snaps to 15 minutes
 - **Dependency arrows**: drag from the small dot at the end of a bar onto another bar. If a task starts before the one it follows ends, the arrow turns **red and dashed**. Tap an arrow, then its ✕, to remove it
 - A **red current-time line** with a dot, updated every minute on today's view
+- **Keep scrolling in time**: the timeline always shows the period before and after the current one beside it (yesterday and tomorrow in Hours and Day, the neighbouring weeks, months, quarters or years in the larger zooms). Scroll sideways past the edge and it carries on into the past or the future. In Hours and Day, neighbouring days show only the tasks that occur on them, and the day shading marks which one is selected
 - Previous / Today / next steps by the current zoom (a day, a week, a month, and so on)
 
 ### Calendar

@@ -405,6 +405,27 @@
 	background: var(--text-error);
 }
 
+/* Yesterday / tomorrow beside today on the day timeline */
+.rt-dayshade {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	z-index: 0;
+	background: color-mix(in srgb, var(--text-normal) 4%, transparent);
+	pointer-events: none;
+}
+.rt-vline.is-day {
+	width: 2px;
+	background: color-mix(in srgb, var(--rt-line) 70%, var(--text-muted));
+}
+.rt-hour.is-daystart {
+	font-weight: var(--font-semibold);
+	color: var(--text-normal);
+}
+.rt-bar.is-neighbour .rt-bar-in {
+	opacity: 0.85;
+}
+
 /* Hover-to-add block on the timeline grid */
 .rt-ghost {
 	position: absolute;
