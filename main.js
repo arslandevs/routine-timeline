@@ -576,7 +576,6 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     }
     this.registerView(VIEW_TYPE, (leaf) => new TimelineView(leaf, this));
     this.addRibbonIcon("gantt-chart", "Open timeline view", () => void this.openView());
-    this.addRibbonIcon("database", "Switch database", () => new BaseSwitcherModal(this.app, this).open());
     this.addCommand({
       id: "open-view",
       name: "Open timeline view",
@@ -2920,15 +2919,17 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       }
     }
   }
-  // Columns that are plain values (not a special editor like Status/Repeat/Comes after) support
-  // copy/paste and the fill handle, like Notion.
+  // Repeat and Comes after aren't single copyable values (Repeat is a whole recurrence pattern,
+  // Comes after is a relation to other tasks' ids) - clicking them opens the side panel rather than
+  // a text editor, so they're the only columns without copy/paste or a fill handle.
   cellEditable(k) {
-    return k !== "status" && k !== "repeat" && k !== "after";
+    return k !== "repeat" && k !== "after";
   }
   // The same string a cell would seed its text-input editor with (editCell's `value`), reused so
   // copy, paste and the fill handle write values in the exact format applyCell expects.
   cellEditValue(task, k, customType) {
     if (k === "name") return task.title;
+    if (k === "status") return this.statusOf(task).id;
     if (k === "group") return task.group;
     if (k === "start") return hhmm(task.start);
     if (k === "end") return hhmm(task.end >= DAY ? DAY - 1 : task.end);
@@ -2937,9 +2938,16 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     if (customType === "checkbox") return task.custom[k] ? "true" : "";
     return task.custom[k] === void 0 ? "" : String(task.custom[k]);
   }
-  // Checkbox custom properties store a real boolean, not the text applyCell writes for everything
-  // else, so copy/paste/fill go through this instead of calling applyCell directly.
+  // Checkbox custom properties store a real boolean, and status is set per day via withStatus(),
+  // not the text applyCell writes for everything else, so copy/paste/fill go through this instead
+  // of calling applyCell directly.
   writeCellValue(task, k, v, customType) {
+    if (k === "status") {
+      const st = this.plugin.store.statuses.find((s) => s.id === v);
+      if (!st) return "";
+      withStatus(task, task.date !== null ? task.date : this.dayStr, st, this.plugin.store.statuses);
+      return "";
+    }
     if (customType === "checkbox") {
       task.custom = { ...task.custom, [k]: v === "true" };
       return "";
@@ -3024,8 +3032,15 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
   }
   selectCell(td) {
     this.host.querySelectorAll(".is-cell-sel").forEach((x) => x.removeClass("is-cell-sel"));
+    this.host.querySelectorAll(".rt-fill-handle").forEach((x) => x.remove());
     td.addClass("is-cell-sel");
     td.focus();
+    const k = td.dataset.col;
+    if (this.cellEditable(k)) {
+      const tb = td.closest("tbody");
+      const handle = td.createDiv("rt-fill-handle");
+      handle.addEventListener("pointerdown", (e) => this.startFillDrag(e, td.parentElement.dataset.id, k, tb));
+    }
     this.selCell = { id: td.parentElement.dataset.id, col: td.dataset.col };
   }
   moveCell(td, key) {

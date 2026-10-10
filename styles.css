@@ -1674,13 +1674,13 @@
 /* Fill handle: drag the selected cell's corner dot down/up to copy its value, like Notion/Excel. */
 .rt-fill-handle {
 	position: absolute;
-	right: -4px;
-	bottom: -4px;
-	width: 8px;
-	height: 8px;
+	right: -5px;
+	bottom: -5px;
+	width: 11px;
+	height: 11px;
 	border-radius: 50%;
-	background: var(--interactive-accent);
-	border: 1.5px solid var(--background-primary);
+	background: var(--background-primary);
+	border: 2px solid var(--interactive-accent);
 	cursor: crosshair;
 	z-index: 3;
 }
