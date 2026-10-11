@@ -887,13 +887,14 @@
 	width: 56px;
 }
 .rt-colorrule-sw {
-	width: 16px;
-	height: 16px;
-	border-radius: 4px;
+	width: 18px;
+	height: 18px;
+	border-radius: 5px;
 	border: none;
 	padding: 0;
 	cursor: pointer;
-	background: var(--rt-sw);
+	background-color: var(--rt-sw) !important;
+	box-shadow: none !important;
 	flex: 0 0 auto;
 }
 .rt-colorrule-sw.is-on {
