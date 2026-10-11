@@ -860,20 +860,31 @@
 .rt-tr.has-rule-color.is-selected {
 	filter: brightness(0.96);
 }
+.rt-colorpanel {
+	width: auto;
+	max-width: min(92vw, 420px);
+	max-height: none;
+}
+.rt-colorrule-list {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
 .rt-colorrule {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	gap: 6px;
 	padding: 4px 2px;
 }
 .rt-colorrule select {
 	font-size: var(--font-ui-smaller);
-	max-width: 92px;
+	max-width: 84px;
 }
 .rt-colorrule input[type="text"],
 .rt-colorrule input[type="number"] {
 	font-size: var(--font-ui-smaller);
-	width: 64px;
+	width: 56px;
 }
 .rt-colorrule-sw {
 	width: 16px;

@@ -2650,8 +2650,11 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     const place = () => {
       const r = panel.getBoundingClientRect();
       const vw = window.innerWidth, vh = window.innerHeight;
-      let x = ev.clientX, y = ev.clientY;
-      if (x + r.width + pad > vw) x = vw - r.width - pad;
+      // Open to the left of the click point by default (the button usually sits near the
+      // right edge of the View settings panel), falling back to the right if there's no room.
+      let x = ev.clientX - r.width;
+      if (x < pad) x = Math.min(ev.clientX, vw - r.width - pad);
+      let y = ev.clientY;
       if (y + r.height + pad > vh) y = vh - r.height - pad;
       panel.style.left = `${Math.max(pad, x)}px`;
       panel.style.top = `${Math.max(pad, y)}px`;
