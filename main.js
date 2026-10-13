@@ -283,6 +283,23 @@ function normalizeAppData(raw) {
   const id = uid();
   return { bases: [{ id, name: "Routine", store: legacy }], activeBaseId: id };
 }
+// Task data lives in a regular vault file (not the hidden .obsidian folder) so sync tools that
+// only sync notes - LiveSync, Remotely Save, Obsidian Sync - carry it to every device.
+const DEFAULT_SYNC_PATH = "Routine Timeline/routine-timeline.json";
+function cleanSyncPath(v) {
+  let p = typeof v === "string" ? v.trim().replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/") : "";
+  if (!p) return DEFAULT_SYNC_PATH;
+  if (!/\.json$/i.test(p)) p += ".json";
+  return p;
+}
+// The untouched sample data a fresh install creates. A device holding only this must never push
+// it over the real synced file.
+function isPristineSeed(appData) {
+  if (!appData || appData.bases.length !== 1) return false;
+  const tasks = appData.bases[0].store.tasks;
+  const seed = seedTasks().map((t) => t.title);
+  return tasks.length === seed.length && tasks.every((t, i) => t.title === seed[i] && t.doneDates.length === 0 && !t.notes);
+}
 function parseOpts(src) {
   const o = { height: 420, groupBy: "none", hideDone: false, groups: [], layout: "timeline", zoom: "day", cal: "month", view: "" };
   for (const line of src.split("\n")) {
@@ -555,6 +572,10 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     super(...arguments);
     const id = uid();
     this.appData = { bases: [{ id, name: "Routine", store: defaultStore([]) }], activeBaseId: id };
+    this.syncPath = DEFAULT_SYNC_PATH;
+    this.syncText = null;
+    this.syncTimer = null;
+    this.syncReady = false;
     this.boards = /* @__PURE__ */ new Set();
     this.feedData = /* @__PURE__ */ new Map();
     this.expandCache = /* @__PURE__ */ new Map();
@@ -570,14 +591,21 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     (b || this.appData.bases[0]).store = v;
   }
   async onload() {
-    const migrated = normalizeAppData(await this.loadData());
-    if (migrated) {
-      this.appData = migrated;
+    const raw = await this.loadData();
+    if (raw && typeof raw.syncPath === "string") this.syncPath = cleanSyncPath(raw.syncPath);
+    const local = normalizeAppData(raw);
+    const fromVault = await this.readSyncFile();
+    if (fromVault) {
+      this.applySynced(fromVault, local && local.activeBaseId);
+    } else if (local) {
+      this.appData = local;
     } else {
       const id = uid();
       this.appData = { bases: [{ id, name: "Routine", store: defaultStore(seedTasks()) }], activeBaseId: id };
-      await this.saveData(this.appData);
+      await this.saveData({ ...this.appData, syncPath: this.syncPath });
     }
+    const pushLocal = !fromVault && local && !isPristineSeed(local);
+    if (this.app && this.app.workspace) this.app.workspace.onLayoutReady(() => void this.startSync(pushLocal));
     this.registerView(VIEW_TYPE, (leaf) => new TimelineView(leaf, this));
     this.addRibbonIcon("gantt-chart", "Open timeline view", () => void this.openView());
     this.addCommand({
@@ -707,7 +735,7 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
   async addFeed(name, url, color) {
     const f = { id: uid(), name: name.trim() || "Calendar", url: url.trim(), color, visible: true };
     this.store.feeds.push(f);
-    await this.saveData(this.appData);
+    await this.persist();
     await this.fetchFeed(f);
     for (const b of this.boards) b.render();
   }
@@ -736,8 +764,119 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     );
   }
   async save() {
-    await this.saveData(this.appData);
+    await this.persist();
     for (const b of this.boards) b.render();
+  }
+  async persist() {
+    await this.saveData({ ...this.appData, syncPath: this.syncPath });
+    this.queueSyncWrite();
+  }
+  // ---- vault sync file ---------------------------------------------------------------
+  syncJson() {
+    return JSON.stringify({ version: 1, bases: this.appData.bases, activeBaseId: this.appData.activeBaseId }, null, 1);
+  }
+  async readSyncFile() {
+    const adapter = this.app && this.app.vault && this.app.vault.adapter;
+    if (!adapter) return null;
+    try {
+      if (!await adapter.exists(this.syncPath)) return null;
+      const text = await adapter.read(this.syncPath);
+      const data = normalizeAppData(JSON.parse(text));
+      if (data) this.syncText = text;
+      return data;
+    } catch (e) {
+      console.error("Routine Timeline: could not read", this.syncPath, e);
+      return null;
+    }
+  }
+  // Keep this device's active database when the synced copy still has it, so switching
+  // databases on the phone doesn't yank the desktop along with it.
+  applySynced(data, keepActiveId) {
+    if (keepActiveId && data.bases.some((b) => b.id === keepActiveId)) data.activeBaseId = keepActiveId;
+    this.appData = data;
+  }
+  async startSync(pushLocal) {
+    const vault = this.app.vault;
+    const onChange = (f) => {
+      if (f && f.path === this.syncPath) void this.reloadFromVault();
+    };
+    this.registerEvent(vault.on("modify", onChange));
+    this.registerEvent(vault.on("create", onChange));
+    this.syncReady = true;
+    const data = await this.readSyncFile();
+    if (data) {
+      this.applySynced(data, this.appData.activeBaseId);
+      await this.saveData({ ...this.appData, syncPath: this.syncPath });
+      for (const b of this.boards) b.render();
+    } else if (pushLocal) {
+      await this.writeSyncFile();
+    }
+  }
+  async reloadFromVault() {
+    const adapter = this.app.vault.adapter;
+    let text;
+    try {
+      text = await adapter.read(this.syncPath);
+    } catch (e) {
+      return;
+    }
+    if (text === this.syncText) return;
+    let data;
+    try {
+      data = normalizeAppData(JSON.parse(text));
+    } catch (e) {
+      return;
+    }
+    if (!data) return;
+    if (this.syncTimer) {
+      window.clearTimeout(this.syncTimer);
+      this.syncTimer = null;
+    }
+    this.syncText = text;
+    this.applySynced(data, this.appData.activeBaseId);
+    this.expandCache.clear();
+    await this.saveData({ ...this.appData, syncPath: this.syncPath });
+    for (const b of this.boards) b.render();
+  }
+  queueSyncWrite() {
+    if (!this.syncReady) return;
+    if (this.syncTimer) window.clearTimeout(this.syncTimer);
+    this.syncTimer = window.setTimeout(() => {
+      this.syncTimer = null;
+      void this.writeSyncFile();
+    }, 400);
+  }
+  async writeSyncFile() {
+    const vault = this.app.vault;
+    const text = this.syncJson();
+    if (text === this.syncText) return;
+    this.syncText = text;
+    try {
+      const existing = vault.getAbstractFileByPath(this.syncPath);
+      if (existing) {
+        await vault.modify(existing, text);
+      } else {
+        const dir = this.syncPath.includes("/") ? this.syncPath.slice(0, this.syncPath.lastIndexOf("/")) : "";
+        if (dir && !vault.getAbstractFileByPath(dir)) await vault.createFolder(dir).catch(() => {});
+        await vault.create(this.syncPath, text);
+      }
+    } catch (e) {
+      console.error("Routine Timeline: could not write", this.syncPath, e);
+    }
+  }
+  async setSyncPath(path) {
+    const next = cleanSyncPath(path);
+    if (next === this.syncPath) return;
+    this.syncPath = next;
+    this.syncText = null;
+    const data = await this.readSyncFile();
+    if (data) {
+      this.applySynced(data, this.appData.activeBaseId);
+      for (const b of this.boards) b.render();
+    } else {
+      await this.writeSyncFile();
+    }
+    await this.saveData({ ...this.appData, syncPath: this.syncPath });
   }
   // ---- databases ("bases"): separate task lists you switch between, like separate Notion
   // databases. Each embed and the main view always shows whichever base is currently active.
@@ -783,6 +922,13 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     this.appData.bases = this.appData.bases.filter((b) => b.id !== id);
     if (this.appData.activeBaseId === id) this.appData.activeBaseId = this.appData.bases[0].id;
     await this.save();
+  }
+  onunload() {
+    if (this.syncTimer) {
+      window.clearTimeout(this.syncTimer);
+      this.syncTimer = null;
+      void this.writeSyncFile();
+    }
   }
 };
 const TimelineView = class extends import_obsidian.ItemView {
@@ -4153,6 +4299,15 @@ const RoutineSettingTab = class extends import_obsidian.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
+    new import_obsidian.Setting(containerEl).setName("Sync").setHeading();
+    let pathInput = this.plugin.syncPath;
+    new import_obsidian.Setting(containerEl).setName("Data file").setDesc("Your tasks, databases and views are saved in this vault file, so any sync that carries your notes (LiveSync, Obsidian Sync, Remotely Save, iCloud) also carries them to your phone. Use the same path on every device.").addText((t) => t.setPlaceholder(DEFAULT_SYNC_PATH).setValue(this.plugin.syncPath).onChange((v) => {
+      pathInput = v;
+    })).addButton((b) => b.setButtonText("Apply").onClick(async () => {
+      await this.plugin.setSyncPath(pathInput);
+      this.display();
+    }));
+    new import_obsidian.Setting(containerEl).setName("Calendars").setHeading();
     containerEl.createEl("p", {
       cls: "setting-item-description",
       text: "Show Google Calendar events (or any .ics feed) in the Calendar layout. In Google Calendar open Settings, pick a calendar and copy its Secret address in iCal format. It is read-only, refreshes every 30 minutes, and Google itself updates the feed every few hours. Treat the address like a password: it is saved in this plugin's data file."
