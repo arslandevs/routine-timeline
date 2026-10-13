@@ -1341,8 +1341,13 @@ const TimelineBoard = class {
     if (this.ui.layout === "calendar") {
       const sb = head.createEl("button", { cls: "clickable-icon", attr: { "aria-label": "Toggle calendar sidebar" } });
       (0, import_obsidian.setIcon)(sb, "panel-left");
-      sb.toggleClass("is-active", !!this.ui.sidebar);
+      sb.toggleClass("is-active", this.calNarrow() ? !!this.calDrawer : !!this.ui.sidebar);
       sb.onclick = () => {
+        if (this.calNarrow()) {
+          this.calDrawer = !this.calDrawer;
+          this.render();
+          return;
+        }
         this.ui.sidebar = !this.ui.sidebar;
         this.uiChanged();
       };
@@ -2117,7 +2122,18 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     const body = host.createDiv("rt-cal");
     const range = this.calRange();
     const events = this.plugin.eventsBetween(range.start.getTime(), this.dayAt(range, range.n).getTime());
-    if (this.ui.sidebar) this.renderCalSidebar(body);
+    const narrow = this.calNarrow();
+    if (narrow ? this.calDrawer : this.ui.sidebar) {
+      if (narrow) {
+        body.addClass("has-drawer");
+        const scrim = body.createDiv("rt-cal-scrim");
+        scrim.onclick = () => {
+          this.calDrawer = false;
+          this.render();
+        };
+      }
+      this.renderCalSidebar(body);
+    }
     const main = body.createDiv("rt-cal-main");
     if (this.ui.cal === "month") this.renderMonth(main, range, events);
     else this.renderWeekGrid(main, range, events);
@@ -2273,6 +2289,13 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     this.calNow.label.style.top = `${y - 9}px`;
     this.calNow.label.textContent = `${pad(n.getHours())}:${pad(n.getMinutes())}`;
   }
+  // On a phone or narrow pane the sidebar becomes a drawer over the calendar, closed by default,
+  // instead of a fixed column that leaves no room for the days.
+  calNarrow() {
+    if (import_obsidian.Platform && import_obsidian.Platform.isPhone) return true;
+    const w = this.host.clientWidth;
+    return w > 0 && w < 640;
+  }
   renderCalSidebar(body) {
     const side = body.createDiv("rt-cal-side");
     const mini = side.createDiv("rt-mini");
@@ -2307,6 +2330,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       b.toggleClass("is-sel", k >= selFrom && k <= selTo);
       b.onclick = () => {
         this.day = date;
+        if (this.calNarrow()) this.calDrawer = false;
         this.render();
       };
     }

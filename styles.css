@@ -1958,3 +1958,23 @@
 .rt-table th.is-drop-after {
 	box-shadow: inset -3px 0 0 var(--interactive-accent);
 }
+
+/* Calendar sidebar as a drawer on phones / narrow panes */
+.rt-cal.has-drawer {
+	position: relative;
+}
+.rt-cal.has-drawer .rt-cal-side {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: 0;
+	z-index: 20;
+	width: min(280px, 85%);
+	box-shadow: var(--shadow-l);
+}
+.rt-cal-scrim {
+	position: absolute;
+	inset: 0;
+	z-index: 19;
+	background: rgba(0, 0, 0, 0.25);
+}
