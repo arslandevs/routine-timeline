@@ -286,6 +286,52 @@ function normalizeAppData(raw) {
 // Task data lives in a regular vault file (not the hidden .obsidian folder) so sync tools that
 // only sync notes - LiveSync, Remotely Save, Obsidian Sync - carry it to every device.
 const DEFAULT_SYNC_PATH = "Routine Timeline/routine-timeline.json";
+// Reminders are per device (kept in the plugin's local data, not the synced file), so each
+// device decides whether it nags you.
+const NOTIFY_SOUNDS = { system: "System default", chime: "Chime", bell: "Bell", ding: "Ding", pop: "Soft pop", none: "No sound" };
+const NOTIFY_LEADS = [0, 5, 10, 15, 30];
+const defaultNotify = () => ({ enabled: true, lead: 0, atStart: true, sound: "system" });
+function cleanNotify(v) {
+  const d = defaultNotify();
+  if (!v || typeof v !== "object") return d;
+  return {
+    enabled: typeof v.enabled === "boolean" ? v.enabled : d.enabled,
+    lead: NOTIFY_LEADS.includes(v.lead) ? v.lead : d.lead,
+    atStart: typeof v.atStart === "boolean" ? v.atStart : d.atStart,
+    sound: v.sound in NOTIFY_SOUNDS ? v.sound : d.sound
+  };
+}
+const TONES = {
+  chime: [[880, 0, 0.5], [1318.5, 0.18, 0.7]],
+  bell: [[659.3, 0, 1.2], [1318.5, 0, 0.9], [1975.5, 0, 0.5]],
+  ding: [[1568, 0, 0.6]],
+  pop: [[523.3, 0, 0.12], [784, 0.09, 0.16]]
+};
+let toneCtx = null;
+function playTone(name) {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const notes = TONES[name];
+  if (!AC || !notes) return;
+  try {
+    toneCtx = toneCtx || new AC();
+    if (toneCtx.state === "suspended") void toneCtx.resume();
+    const t0 = toneCtx.currentTime + 0.02;
+    for (const [freq, at, len] of notes) {
+      const osc = toneCtx.createOscillator();
+      const gain = toneCtx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(1e-4, t0 + at);
+      gain.gain.exponentialRampToValueAtTime(0.25, t0 + at + 0.01);
+      gain.gain.exponentialRampToValueAtTime(1e-4, t0 + at + len);
+      osc.connect(gain).connect(toneCtx.destination);
+      osc.start(t0 + at);
+      osc.stop(t0 + at + len + 0.05);
+    }
+  } catch (e) {
+    console.error("Routine Timeline: could not play sound", e);
+  }
+}
 function cleanSyncPath(v) {
   let p = typeof v === "string" ? v.trim().replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/") : "";
   if (!p) return DEFAULT_SYNC_PATH;
@@ -576,6 +622,9 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     this.syncText = null;
     this.syncTimer = null;
     this.syncReady = false;
+    this.notify = defaultNotify();
+    this.notified = /* @__PURE__ */ new Set();
+    this.notifiedDay = "";
     this.boards = /* @__PURE__ */ new Set();
     this.feedData = /* @__PURE__ */ new Map();
     this.expandCache = /* @__PURE__ */ new Map();
@@ -593,6 +642,7 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
   async onload() {
     const raw = await this.loadData();
     if (raw && typeof raw.syncPath === "string") this.syncPath = cleanSyncPath(raw.syncPath);
+    if (raw) this.notify = cleanNotify(raw.notify);
     const local = normalizeAppData(raw);
     const fromVault = await this.readSyncFile();
     if (fromVault) {
@@ -602,7 +652,7 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     } else {
       const id = uid();
       this.appData = { bases: [{ id, name: "Routine", store: defaultStore(seedTasks()) }], activeBaseId: id };
-      await this.saveData({ ...this.appData, syncPath: this.syncPath });
+      await this.saveLocal();
     }
     const pushLocal = !fromVault && local && !isPristineSeed(local);
     if (this.app && this.app.workspace) this.app.workspace.onLayoutReady(() => void this.startSync(pushLocal));
@@ -629,6 +679,7 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     this.addSettingTab(new RoutineSettingTab(this.app, this));
     window.setTimeout(() => void this.refreshFeeds(), 1500);
     this.registerInterval(window.setInterval(() => void this.refreshFeeds(), 30 * 60 * 1e3));
+    this.registerInterval(window.setInterval(() => this.checkReminders(), 15e3));
   }
   // ---- saved views (the tab bar) --------------------------------------------------
   activeView() {
@@ -767,8 +818,77 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     await this.persist();
     for (const b of this.boards) b.render();
   }
+  saveLocal() {
+    return this.saveData({ ...this.appData, syncPath: this.syncPath, notify: this.notify });
+  }
+  // ---- task reminders ------------------------------------------------------------------
+  // Fires once per task per day, inside a 2-minute window after the reminder time, so opening
+  // Obsidian at noon doesn't replay the whole morning.
+  checkReminders(now = /* @__PURE__ */ new Date()) {
+    const n = this.notify;
+    if (!n.enabled) return;
+    const today = ymd(now);
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    if (this.notifiedDay !== today) {
+      this.notified.clear();
+      this.notifiedDay = today;
+    }
+    const offsets = n.lead > 0 ? n.atStart ? [n.lead, 0] : [n.lead] : [0];
+    for (const base of this.appData.bases) {
+      for (const t of base.store.tasks) {
+        if (!occurs(t, now)) continue;
+        if (t.doneDates.includes(t.date !== null ? t.date : today)) continue;
+        for (const off of offsets) {
+          const at = t.start - off;
+          if (at < 0 || nowMin < at || nowMin > at + 1) continue;
+          const key = `${base.id}:${t.id}:${today}:${off}`;
+          if (this.notified.has(key)) continue;
+          this.notified.add(key);
+          this.fireReminder(t, off);
+        }
+      }
+    }
+  }
+  fireReminder(t, off) {
+    const title = off ? `In ${off} min: ${t.title || "Untitled"}` : `Starting now: ${t.title || "Untitled"}`;
+    const body = `${clockLabel(t.start)} \u2013 ${clockLabel(t.end)}${t.group ? ` \xB7 ${t.group}` : ""}`;
+    this.showReminder(title, body);
+  }
+  // Desktop: a real system notification (the OS decides how long it stays). Phones: Obsidian
+  // gives plugins no system notifications, so an in-app banner while the app is open.
+  showReminder(title, body) {
+    const sound = this.notify.sound;
+    const N = window.Notification;
+    const mobile = !!(import_obsidian.Platform && import_obsidian.Platform.isMobile);
+    const canSystem = !!N && !mobile && N.permission !== "denied";
+    const banner = () => {
+      const frag = document.createDocumentFragment();
+      frag.createDiv({ cls: "rt-notice-title", text: title });
+      frag.createDiv({ cls: "rt-notice-body", text: body });
+      new import_obsidian.Notice(frag, 15e3);
+    };
+    if (canSystem) {
+      const send = () => {
+        const note = new N(title, { body, silent: sound !== "system" });
+        note.onclick = () => {
+          window.focus();
+          note.close();
+          void this.openView();
+        };
+      };
+      if (N.permission === "granted") send();
+      else void N.requestPermission().then((p) => p === "granted" ? send() : banner());
+    } else {
+      banner();
+    }
+    if (sound === "system") {
+      if (!canSystem) playTone("chime");
+    } else if (sound !== "none") {
+      playTone(sound);
+    }
+  }
   async persist() {
-    await this.saveData({ ...this.appData, syncPath: this.syncPath });
+    await this.saveLocal();
     this.queueSyncWrite();
   }
   // ---- vault sync file ---------------------------------------------------------------
@@ -806,7 +926,7 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     const data = await this.readSyncFile();
     if (data) {
       this.applySynced(data, this.appData.activeBaseId);
-      await this.saveData({ ...this.appData, syncPath: this.syncPath });
+      await this.saveLocal();
       for (const b of this.boards) b.render();
     } else if (pushLocal) {
       await this.writeSyncFile();
@@ -835,7 +955,7 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     this.syncText = text;
     this.applySynced(data, this.appData.activeBaseId);
     this.expandCache.clear();
-    await this.saveData({ ...this.appData, syncPath: this.syncPath });
+    await this.saveLocal();
     for (const b of this.boards) b.render();
   }
   queueSyncWrite() {
@@ -876,7 +996,7 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     } else {
       await this.writeSyncFile();
     }
-    await this.saveData({ ...this.appData, syncPath: this.syncPath });
+    await this.saveLocal();
   }
   // ---- databases ("bases"): separate task lists you switch between, like separate Notion
   // databases. Each embed and the main view always shows whichever base is currently active.
@@ -4323,23 +4443,57 @@ const RoutineSettingTab = class extends import_obsidian.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    new import_obsidian.Setting(containerEl).setName("Sync").setHeading();
-    let pathInput = this.plugin.syncPath;
-    new import_obsidian.Setting(containerEl).setName("Data file").setDesc("Your tasks, databases and views are saved in this vault file, so any sync that carries your notes (LiveSync, Obsidian Sync, Remotely Save, iCloud) also carries them to your phone. Use the same path on every device.").addText((t) => t.setPlaceholder(DEFAULT_SYNC_PATH).setValue(this.plugin.syncPath).onChange((v) => {
-      pathInput = v;
-    })).addButton((b) => b.setButtonText("Apply").onClick(async () => {
-      await this.plugin.setSyncPath(pathInput);
-      this.display();
+    containerEl.addClass("rt-settings");
+    this.notifySection(containerEl);
+    this.calendarSection(containerEl);
+    this.syncSection(containerEl);
+  }
+  notifySection(el) {
+    const plugin = this.plugin;
+    const n = plugin.notify;
+    const save = async (redraw) => {
+      await plugin.saveLocal();
+      if (redraw) this.display();
+    };
+    new import_obsidian.Setting(el).setName("Notifications").setHeading();
+    new import_obsidian.Setting(el).setName("Task reminders").setDesc("Get a notification when a task is about to start. This setting is saved on this device only, so you can pick which devices remind you.").addToggle((tg) => tg.setValue(n.enabled).onChange(async (v) => {
+      n.enabled = v;
+      await save(true);
     }));
-    new import_obsidian.Setting(containerEl).setName("Calendars").setHeading();
-    containerEl.createEl("p", {
-      cls: "setting-item-description",
-      text: "Show Google Calendar events (or any .ics feed) in the Calendar layout. In Google Calendar open Settings, pick a calendar and copy its Secret address in iCal format. It is read-only, refreshes every 30 minutes, and Google itself updates the feed every few hours. Treat the address like a password: it is saved in this plugin's data file."
+    if (!n.enabled) return;
+    new import_obsidian.Setting(el).setName("Remind me").addDropdown((dd) => {
+      for (const m of NOTIFY_LEADS) dd.addOption(String(m), m ? `${m} minutes before` : "When it starts");
+      dd.setValue(String(n.lead)).onChange(async (v) => {
+        n.lead = Number(v);
+        await save(true);
+      });
     });
+    if (n.lead > 0) {
+      new import_obsidian.Setting(el).setName("Also notify when it starts").addToggle((tg) => tg.setValue(n.atStart).onChange(async (v) => {
+        n.atStart = v;
+        await save(false);
+      }));
+    }
+    new import_obsidian.Setting(el).setName("Sound").setDesc("System default uses your computer's own notification sound and settings.").addDropdown((dd) => {
+      for (const k in NOTIFY_SOUNDS) dd.addOption(k, NOTIFY_SOUNDS[k]);
+      dd.setValue(n.sound).onChange(async (v) => {
+        n.sound = v;
+        await save(false);
+        if (v !== "system" && v !== "none") playTone(v);
+      });
+    }).addExtraButton((b) => b.setIcon("volume-2").setTooltip("Play sound").onClick(() => playTone(n.sound === "system" ? "chime" : n.sound)));
+    const mobile = !!(import_obsidian.Platform && import_obsidian.Platform.isMobile);
+    const desc = mobile ? "On phones, Obsidian lets plugins show reminders only inside the app while it's open, as a banner with sound. There are no background system notifications." : "How long a notification stays on screen follows your system settings. On macOS, set Obsidian to Alerts in System Settings > Notifications to keep it until you dismiss it. Reminders only fire while Obsidian is running.";
+    new import_obsidian.Setting(el).setName("Test").setDesc(desc).addButton((b) => b.setButtonText("Send test notification").onClick(() => {
+      plugin.showReminder("Starting now: Test task", `${clockLabel(9 * 60)} \u2013 ${clockLabel(9 * 60 + 30)} \xB7 Routine Timeline`);
+    }));
+  }
+  calendarSection(el) {
+    new import_obsidian.Setting(el).setName("Calendars").setDesc("Show Google Calendar events (or any .ics feed) in the Calendar layout. In Google Calendar open Settings, pick a calendar and copy its Secret address in iCal format. It is read-only and refreshes every 30 minutes. Treat the address like a password.").setHeading();
     for (const f of this.plugin.store.feeds) {
       const data = this.plugin.feedData.get(f.id);
       const status = data ? data.error ? `Error: ${data.error}` : `${data.events.length} events, updated ${new Date(data.fetched).toLocaleTimeString()}` : "Not loaded yet";
-      new import_obsidian.Setting(containerEl).setName(f.name).setDesc(status).addToggle((tg) => tg.setValue(f.visible).onChange(async (v) => {
+      new import_obsidian.Setting(el).setName(f.name).setDesc(status).addToggle((tg) => tg.setValue(f.visible).onChange(async (v) => {
         f.visible = v;
         await this.plugin.save();
       })).addButton((b) => b.setButtonText("Remove").setWarning().onClick(async () => {
@@ -4347,13 +4501,26 @@ const RoutineSettingTab = class extends import_obsidian.PluginSettingTab {
         this.display();
       }));
     }
-    new import_obsidian.Setting(containerEl).addButton((b) => b.setButtonText("Add calendar").setCta().onClick(() => {
+    new import_obsidian.Setting(el).addButton((b) => b.setButtonText("Add calendar").setCta().onClick(() => {
       new AddFeedModal(this.app, async (n, u, c) => {
         await this.plugin.addFeed(n, u, c);
         this.display();
       }).open();
     })).addButton((b) => b.setButtonText("Refresh now").onClick(async () => {
       await this.plugin.refreshFeeds();
+      this.display();
+    }));
+  }
+  syncSection(el) {
+    new import_obsidian.Setting(el).setName("Sync").setHeading();
+    let pathInput = this.plugin.syncPath;
+    new import_obsidian.Setting(el).setName("Data file").setDesc("Your tasks, databases and views are saved in this vault file, so any sync that carries your notes (LiveSync, Obsidian Sync, Remotely Save, iCloud) also carries them to your phone. Use the same path on every device.").addText((t) => {
+      t.inputEl.addClass("rt-setting-path");
+      t.setPlaceholder(DEFAULT_SYNC_PATH).setValue(this.plugin.syncPath).onChange((v) => {
+        pathInput = v;
+      });
+    }).addButton((b) => b.setButtonText("Apply").onClick(async () => {
+      await this.plugin.setSyncPath(pathInput);
       this.display();
     }));
   }

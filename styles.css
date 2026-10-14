@@ -1978,3 +1978,17 @@
 	z-index: 19;
 	background: rgba(0, 0, 0, 0.25);
 }
+
+/* Settings */
+.rt-settings .rt-setting-path {
+	width: 260px;
+	max-width: 100%;
+}
+.rt-notice-title {
+	font-weight: var(--font-semibold);
+}
+.rt-notice-body {
+	margin-top: 2px;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
