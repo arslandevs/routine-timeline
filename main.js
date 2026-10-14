@@ -680,6 +680,7 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     window.setTimeout(() => void this.refreshFeeds(), 1500);
     this.registerInterval(window.setInterval(() => void this.refreshFeeds(), 30 * 60 * 1e3));
     this.registerInterval(window.setInterval(() => this.checkReminders(), 15e3));
+    this.scheduleReminderTick();
   }
   // ---- saved views (the tab bar) --------------------------------------------------
   activeView() {
@@ -824,6 +825,15 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
   // ---- task reminders ------------------------------------------------------------------
   // Fires once per task per day, inside a 2-minute window after the reminder time, so opening
   // Obsidian at noon doesn't replay the whole morning.
+  // Wake right at each minute boundary so a 9:00 reminder fires at 9:00:00, not up to 15s late.
+  // The 15s interval stays as a backstop in case the OS throttles timers.
+  scheduleReminderTick() {
+    const delay = 6e4 - Date.now() % 6e4 + 50;
+    this.reminderTimer = window.setTimeout(() => {
+      this.checkReminders();
+      this.scheduleReminderTick();
+    }, delay);
+  }
   checkReminders(now = /* @__PURE__ */ new Date()) {
     const n = this.notify;
     if (!n.enabled) return;
@@ -1044,6 +1054,7 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     await this.save();
   }
   onunload() {
+    if (this.reminderTimer) window.clearTimeout(this.reminderTimer);
     if (this.syncTimer) {
       window.clearTimeout(this.syncTimer);
       this.syncTimer = null;
