@@ -54,7 +54,12 @@ const parseHHMM = (s) => {
 };
 const hourLabel = (h) => `${h % 12 || 12} ${h < 12 ? "AM" : "PM"}`;
 const hourLabelShort = (h) => `${h % 12 || 12}${h < 12 ? "AM" : "PM"}`;
-const clockLabel = (min) => `${Math.floor(min / 60) % 12 || 12}:${String(min % 60).padStart(2, "0")} ${min < 720 ? "AM" : "PM"}`;
+const clockLabel = (min) => `${Math.floor(min / 60) % 12 || 12}:${String(min % 60).padStart(2, "0")} ${min % 1440 < 720 ? "AM" : "PM"}`;
+// A task may run past midnight: its end is then stored as minutes after the start of its own day
+// (e.g. 23:00\u201303:00 is start 1380, end 1620). Time inputs show the end as a clock time, and an
+// end clock earlier than the start means "the next day".
+const endClock = (m) => hhmm(m % 1440);
+const overnightEnd = (start, clock) => clock < start ? clock + 1440 : clock;
 const dayIndex = (d, start) => Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - start.getTime()) / 864e5);
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DEFAULT_LEN = 25;
@@ -1365,19 +1370,32 @@ const TimelineBoard = class {
     this.dayCols = null;
     if (dayTimeline && ui.groupBy === "none") {
       const doneOn = (t2, d) => t2.doneDates.includes(t2.date !== null ? t2.date : ymd(d));
-      const cols = [-1, 0, 1].map((k) => {
-        const d = near[k + 1];
+      // A bar that runs past midnight spills into the next day's column. That day skips the
+      // spilled-into row until the overnight task ends, so the two bars never overlap. Packing
+      // starts two days early so a column's rows are the same whichever day is selected.
+      let spill = [];
+      const cols = [-3, -2, -1, 0, 1].map((k) => {
+        const d = new Date(dy.getFullYear(), dy.getMonth(), dy.getDate() + k);
         const items = this.plugin.store.tasks.filter((t2) => occurs(t2, d)).filter((t2) => !ui.hideDone || !doneOn(t2, d)).filter((t2) => ui.groups.length === 0 || ui.groups.includes(groupLabel(t2))).filter((t2) => !q || t2.title.toLowerCase().includes(q)).sort((a, b) => a.start - b.start || a.end - b.end || taskIndex.get(a.id) - taskIndex.get(b.id));
-        return { k, day: d, items };
-      });
+        const rows = [];
+        let r = 0;
+        for (const t2 of items) {
+          while (spill.some((o) => o.row === r && o.until > t2.start)) r++;
+          rows.push(r++);
+        }
+        const used = Math.max(r, ...spill.map((o) => o.row + 1));
+        spill = items.map((t2, i) => ({ row: rows[i], until: t2.end - DAY })).filter((o) => o.until > 0);
+        return { k, day: d, items, rows, used };
+      }).slice(2);
       for (const col of cols) {
         col.items.forEach((t2, i) => {
-          this.yCenter.set(`${t2.id}:${col.k}`, i * ROW_H + ROW_H / 2);
-          if (col.k === 0) this.yCenter.set(t2.id, i * ROW_H + ROW_H / 2);
+          const yc = col.rows[i] * ROW_H + ROW_H / 2;
+          this.yCenter.set(`${t2.id}:${col.k}`, yc);
+          if (col.k === 0) this.yCenter.set(t2.id, yc);
         });
       }
       this.dayCols = cols;
-      this.totalH = Math.max(0, ...cols.map((c) => c.items.length * ROW_H));
+      this.totalH = Math.max(0, ...cols.map((c) => c.used * ROW_H));
     }
   }
   // ---- rendering ---------------------------------------------------------------
@@ -1893,7 +1911,7 @@ const TimelineBoard = class {
       for (const col of this.dayCols) {
         col.items.forEach((t, i) => {
           any = true;
-          this.renderDayBar(rows, t, col.k, i);
+          this.renderDayBar(rows, t, col.k, col.rows[i]);
         });
       }
       rows.style.height = `${this.totalH}px`;
@@ -2041,7 +2059,8 @@ const TimelineBoard = class {
       const minW = Math.min(w - 2, 56);
       for (const i of days) {
         const left = i * w + t.start / 1440 * w;
-        const width = Math.max(6, Math.min(Math.max((t.end - t.start) / 1440 * w, minW), (i + 1) * w - left - 1));
+        const right = t.end > 1440 ? sp.total : (i + 1) * w;
+        const width = Math.max(6, Math.min(Math.max((t.end - t.start) / 1440 * w, minW), right - left - 1));
         specs.push({ left, width, i });
       }
     } else {
@@ -2107,9 +2126,9 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
           if (oneTime) {
             const total = clamp(i0 * 1440 + t.start + dm, 0, sp.n * 1440 - 1);
             const day = Math.floor(total / 1440);
-            target = { day, start: clamp(total - day * 1440, 0, 1440 - len) };
+            target = { day, start: clamp(total - day * 1440, 0, 1440 - SNAP) };
           } else {
-            target = { day: i0, start: clamp(t.start + dm, 0, 1440 - len) };
+            target = { day: i0, start: clamp(t.start + dm, 0, 1440 - SNAP) };
           }
           bar.style.left = `${target.day * w + target.start / 1440 * w}px`;
         } else {
@@ -2222,8 +2241,15 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1).getTime();
     const items = [];
     if (this.ui.showTasks) {
+      // An overnight task shows until midnight on its own day, and the rest at the top of the next day.
+      const prev = new Date(date.getFullYear(), date.getMonth(), date.getDate() - 1);
+      const prevKey = ymd(prev);
+      for (const x of this.calTasksOn(prev)) {
+        if (x.end <= DAY) continue;
+        items.push({ kind: "task", t: x, allDay: false, start: 0, end: x.end - DAY, title: x.title || "Untitled", color: x.color, done: x.doneDates.includes(x.date !== null ? x.date : prevKey), from: prev });
+      }
       for (const x of this.calTasksOn(date)) {
-        items.push({ kind: "task", t: x, allDay: false, start: x.start, end: x.end, title: x.title || "Untitled", color: x.color, done: x.doneDates.includes(key) });
+        items.push({ kind: "task", t: x, allDay: false, start: x.start, end: Math.min(x.end, DAY), title: x.title || "Untitled", color: x.color, done: x.doneDates.includes(key) });
       }
     }
     for (const e of events) {
@@ -2240,6 +2266,8 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       new EventModal(this.app(), it.e).open();
       return;
     }
+    // The continuation of last night's task opens the occurrence it belongs to.
+    if (it.from) date = it.from;
     this.day = date;
     this.dayStr = ymd(date);
     this.editTask(it.t);
@@ -2363,7 +2391,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
         const y = ev.clientY - col.getBoundingClientRect().top;
         this.addOn(date, Math.floor(y / HOUR_H * 60 / SNAP) * SNAP);
       };
-      const timed = perDay[i].filter((x) => !x.allDay).map((x) => ({ ...x, ts: x.start, te: Math.max(x.end, x.start + 25) })).sort((a, b) => a.ts - b.ts || b.te - a.te);
+      const timed = perDay[i].filter((x) => !x.allDay).map((x) => ({ ...x, ts: x.start, te: Math.min(Math.max(x.end, x.start + 25), DAY) })).sort((a, b) => a.ts - b.ts || b.te - a.te);
       const lanes = [];
       let cluster = [];
       let clusterEnd = -1;
@@ -3339,7 +3367,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     if (k === "status") return this.statusOf(task).id;
     if (k === "group") return task.group;
     if (k === "start") return hhmm(task.start);
-    if (k === "end") return hhmm(task.end >= DAY ? DAY - 1 : task.end);
+    if (k === "end") return endClock(task.end);
     if (k === "duration") return String(task.end - task.start);
     if (k === "date") return task.date || task.from || this.dayStr;
     if (customType === "checkbox") return task.custom[k] ? "true" : "";
@@ -3477,16 +3505,16 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       if (m === null) return "That is not a valid time.";
       const dur = task.end - task.start;
       task.start = m;
-      task.end = Math.min(DAY, m + dur);
-      if (task.end <= task.start) task.end = Math.min(DAY, task.start + 15);
+      task.end = m + clamp(dur, 1, DAY);
     } else if (k === "end") {
       const m = parseHHMM(v);
-      if (m === null || m <= task.start) return "End time must be after start time.";
-      task.end = m;
+      if (m === null || m === task.start % DAY) return "End time must be different from the start time.";
+      task.end = overnightEnd(task.start, m);
     } else if (k === "duration") {
       const n = parseInt(v, 10);
       if (!(n > 0)) return "Duration must be at least 1 minute.";
-      task.end = Math.min(DAY, task.start + n);
+      if (n > DAY) return "Duration can be at most 24 hours (1440 minutes).";
+      task.end = task.start + n;
     } else if (k === "date") {
       if (!v) return "";
       if (task.date !== null) task.date = v;
@@ -3530,7 +3558,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       value = hhmm(task.start);
     } else if (k === "end") {
       type = "time";
-      value = hhmm(task.end >= DAY ? DAY - 1 : task.end);
+      value = endClock(task.end);
     } else if (k === "duration") {
       type = "number";
       value = String(task.end - task.start);
@@ -4035,14 +4063,17 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
         if (!moved && Math.abs(dx) < 4) return;
         moved = true;
         const dm = Math.round(dx / this.hw * 60 / SNAP) * SNAP;
+        // Bars may run past midnight. A one-off task can also be dragged across midnight into
+        // the next (or previous) day; it is moved onto that date when the drag ends.
+        const oneOff = t.date !== null;
         if (mode === "move") {
           const len = e0 - s0;
-          t.start = clamp(s0 + dm, 0, DAY - len);
+          t.start = oneOff ? clamp(s0 + dm, -DAY, 2 * DAY - SNAP) : clamp(s0 + dm, 0, DAY - SNAP);
           t.end = t.start + len;
         } else if (mode === "start") {
-          t.start = clamp(s0 + dm, 0, e0 - SNAP);
+          t.start = clamp(s0 + dm, Math.max(oneOff ? -DAY : 0, e0 - DAY), e0 - SNAP);
         } else {
-          t.end = clamp(e0 + dm, s0 + SNAP, DAY);
+          t.end = clamp(e0 + dm, s0 + SNAP, s0 + DAY);
         }
         this.place(bar, t);
         this.drawDeps();
@@ -4053,6 +4084,13 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
         bar.removeEventListener("pointercancel", onUp);
         if (moved) {
           lastDragEnd = Date.now();
+          const shift = t.date !== null ? Math.floor(t.start / DAY) : 0;
+          if (shift) {
+            const d0 = parseYmd(t.date);
+            t.date = ymd(new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + shift));
+            t.start -= shift * DAY;
+            t.end -= shift * DAY;
+          }
           await this.plugin.save();
         }
       };
@@ -4308,7 +4346,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
     const dayStr = preset.date || this.dayStr;
     const isToday = dayStr === ymd(now);
     const rounded = Math.ceil((now.getHours() * 60 + now.getMinutes()) / SNAP) * SNAP;
-    const start = preset.start !== void 0 ? clamp(preset.start, 0, DAY - DEFAULT_LEN) : clamp(isToday ? rounded : 9 * 60, 0, DAY - DEFAULT_LEN);
+    const start = preset.start !== void 0 ? clamp(preset.start, 0, DAY - SNAP) : clamp(isToday ? rounded : 9 * 60, 0, DAY - SNAP);
     const t = {
       id: uid(),
       title: "",
@@ -4716,21 +4754,27 @@ const TaskModal = class extends import_obsidian.Modal {
         if (m === null) return;
         d.start = m;
         if (!endTouched) {
-          d.end = Math.min(DAY - 1, m + DEFAULT_LEN);
-          if (endInput) endInput.value = hhmm(d.end);
-        }
+          d.end = m + DEFAULT_LEN;
+          if (endInput) endInput.value = endClock(d.end);
+        } else d.end = overnightEnd(m, d.end % DAY);
+        showNext();
       });
     });
-    new import_obsidian.Setting(contentEl).setName(this.props.end.label).setDesc(this.isNew ? `Defaults to ${DEFAULT_LEN} minutes after the start.` : "").addText((t) => {
+    const endHint = this.isNew ? `Defaults to ${DEFAULT_LEN} minutes after the start. ` : "";
+    const endSetting = new import_obsidian.Setting(contentEl).setName(this.props.end.label).addText((t) => {
       endInput = t.inputEl;
       t.inputEl.type = "time";
-      t.setValue(hhmm(d.end >= DAY ? DAY - 1 : d.end)).onChange((v) => {
+      t.setValue(endClock(d.end)).onChange((v) => {
         const m = parseHHMM(v);
         if (m === null) return;
-        d.end = m;
+        d.end = overnightEnd(d.start, m);
         endTouched = true;
+        showNext();
       });
     });
+    // An end time earlier than the start runs past midnight into the next day.
+    const showNext = () => endSetting.setDesc(d.end > DAY ? `${endHint}Ends the next day (overnight).` : endHint);
+    showNext();
     const listId = "rt-groups-list";
     new import_obsidian.Setting(contentEl).setName(this.props.group.label).addText((t) => {
       t.inputEl.setAttribute("list", listId);
@@ -4915,7 +4959,7 @@ const TaskModal = class extends import_obsidian.Modal {
     actions.addButton(
       (b) => b.setButtonText("Save").setCta().onClick(async () => {
         if (d.end <= d.start) {
-          new import_obsidian.Notice("End time must be after start time.");
+          new import_obsidian.Notice("End time must be different from the start time.");
           return;
         }
         if (d.date === null && d.days && d.days.length === 0) {

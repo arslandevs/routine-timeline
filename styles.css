@@ -111,6 +111,8 @@
 }
 .rt-rows {
 	position: relative;
+	/* An overnight bar on the last visible day would otherwise widen the scroll area. */
+	overflow-x: clip;
 }
 .rt-row {
 	position: relative;
