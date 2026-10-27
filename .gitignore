@@ -1,3 +1,4 @@
 .DS_Store
 node_modules/
 *.zip
+docs/dev-plan-views-and-calendar.md

@@ -1,14 +1,14 @@
 # Routine Timeline
 
-A Notion-style task and routine planner for Obsidian. One set of tasks, four layouts (Table, Board, Timeline, Calendar), saved views in a tab bar, repeating tasks you can tick off day by day, a Google Calendar feed, and an inline block you can drop into any note.
+A Notion-style task and routine planner for Obsidian. One set of tasks, four layouts (Table, Board, Timeline, Calendar), saved views in a tab bar, repeating tasks you can tick off day by day, a stopwatch that logs the time you actually spend, reminders, separate databases, a Google Calendar feed, sync between your devices through a vault file, and an inline block you can drop into any note.
 
 <p align="center">
   <img src="docs/screenshots/timeline-day.jpg" alt="Routine Timeline: plan your day on an hour-by-hour timeline" width="100%">
 </p>
 
-**[⬇ Download the latest release](https://github.com/arslandevs/routine-timeline/releases/latest)** · [Install](#install) · [Views](#views) · [Repeating tasks](#tasks)
+**[⬇ Download the latest release](https://github.com/arslandevs/routine-timeline/releases/latest)** · [Install](#install) · [Views](#views) · [Tasks](#tasks) · [Time tracking](#time-tracking) · [Reminders](#reminders) · [Sync](#sync-between-devices) · [Development](#development)
 
-> **Status: early release (v0.16.0).** Every layout, zoom, editor and menu is covered by a headless DOM test, but it has not been fully tested inside Obsidian yet. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
+> **Status: v0.25.0, in daily use but still young.** The regression tests in [`tests/`](tests) run the real plugin in a headless DOM (`npm test`) and cover sync, time tracking, overnight tasks, reminders and the phone layout. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
 
 ## What it looks like
 
@@ -55,6 +55,8 @@ Edit it like a spreadsheet.
 - **Status** is a colored chip. Click it to change the status
 - **OPEN**: hover a row's name and click **OPEN** to open the task in a side panel with every field plus a **Notes** box. Click anywhere outside the panel to close it. Valid edits are saved automatically
 - **Select rows** with the checkbox (hover a row to see it, or use the header box for all). A floating bar shows **N selected**, a trash icon and a **⋯** menu: *Mark as* any status, *Edit group & color*, *Duplicate*, *Delete*. Right-click a row for the same menu. Deleting asks you to confirm and removes any arrows pointing at the deleted tasks
+- **Actual (min)** shows the time you really spent on the task that day, with a play/stop button (see [Time tracking](#time-tracking)). Type a number to correct it
+- **Fill handle**: select a cell and drag the small square at its corner down to copy the value into the rows below, like a spreadsheet. Copy and paste work between cells too
 - **Click a column header** for its settings, Notion-style: rename it inline, **Change type** (your own properties only), **Sort** old→new or new→old, **Filter** by text, **Group by this** (Group and Status columns), **Freeze**, **Hide**, **Wrap content**, **Insert left/right**, **Duplicate property** and **Delete property**
 - **Drag a column header** to move that column. A blue line shows where it will land. Name always stays first
 - The **+** at the end of the header row adds a new property: text, number, checkbox, select or date
@@ -84,6 +86,8 @@ Zoom out from hours to a whole month or year:
 - **Week and larger** show one column per day. A repeating task appears only on the days it repeats: at its start time inside the day column in Week and Bi-week, and as a mark per day (consecutive days merge) in Month and larger. Titles start inside the bar and run on past it (never into the next occurrence). **Hover an empty spot** to add a task on that day (at that hour in Week and Bi-week). **Drag a bar** to move it: to another day and time in Week and Bi-week, to another day in Month and larger. A repeating task can only change its time of day, and only in Week and Bi-week. Click a bar to edit it
 - **Short tasks keep their name visible**: when a title does not fit inside its bar, it starts inside the bar and runs on past its right edge (like Notion) instead of being cut off
 - **Move and resize**: drag a bar to move it, drag either edge to change the start or end. Snaps to 15 minutes
+- **Overnight tasks**: a task can run past midnight (11 PM – 3 AM). Its bar continues into the next day's column, and dragging a bar past 12 AM moves the task to the next day. In the editor or table, an end time earlier than the start means "the next day"
+- **Hover a bar** for a play/stop button that starts the stopwatch for it; a running bar pulses red and shows the minutes so far
 - **Dependency arrows**: drag from the small dot at the end of a bar onto another bar. If a task starts before the one it follows ends, the arrow turns **red and dashed**. Tap an arrow, then its ✕, to remove it
 - A **red current-time line** with a dot, updated every minute on today's view
 - **Keep scrolling in time**: the timeline always shows the period before and after the current one beside it (yesterday and tomorrow in Hours and Day, the neighbouring weeks, months, quarters or years in the larger zooms). Scroll sideways past the edge and it carries on into the past or the future. In Hours and Day, neighbouring days show only the tasks that occur on them, and the day shading marks which one is selected
@@ -117,6 +121,19 @@ Events appear next to your tasks as solid colored cards, including repeating and
 - **New tasks** start at the time you pick and default to **25 minutes**. Changing the start moves the end with it until you set the end yourself
 - **Notes** are plain text, saved with the task, and available in the editor and the side panel
 - Opens with five example routine tasks you can edit or delete
+- **Conditional color** (View settings → Conditional color): rules such as *Duration < 60 → yellow* or *Group is Work → blue* recolor the matching rows in the Table and bars in the Timeline. The first matching rule wins
+
+## Time tracking
+
+Every task has a stopwatch. Press **▶** on a table row, on a timeline bar, or **Start** in the task editor; press it again (or start another task) to stop. The minutes land in the task's **Actual (min)** for that day, next to the planned **Duration (min)**, and the day header shows the total (`3/10 done · 1h 20m tracked`). The command **Start or stop the timer for the selected task** does the same from the keyboard. Only one timer runs at a time, it keeps running while Obsidian is closed, and it belongs to the device it was started on; the logged minutes sync like any other task data.
+
+## Reminders
+
+**Settings → Routine Timeline → Notifications**: a system notification when a task starts, optionally a few minutes before, with a sound of your choice. On the desktop it is a normal system notification (click it to open the view); on a phone Obsidian can only show it inside the app while it is open. Reminders fire right at the start of the minute and only while Obsidian is running. They are set per device.
+
+## Databases
+
+The database button at the left of the tab bar (or the command **Switch database**) switches between separate task lists, each with its own tasks, properties and views, like separate Notion databases. Every embedded block shows the active database.
 
 ## Properties
 
@@ -169,26 +186,48 @@ All lines are optional:
 
 Lines, headers and side panels are drawn a few shades darker than the page, and task bars, cards and calendar chips take a stronger version of their color with a visible edge, so they stand out on beige and other low-contrast themes. This uses `color-mix`; older Obsidian versions fall back to the theme's own border colors.
 
+## Sync between devices
+
+Your tasks, databases and views are saved in a regular vault file, `Routine Timeline/routine-timeline.json` (change the path under **Settings → Sync**). Anything that syncs your notes (Obsidian Sync, LiveSync, Remotely Save, iCloud, git) carries it to your other devices, where the plugin picks up changes as soon as the file arrives. Edits made on two devices before they sync are **merged task by task**: the most recent edit of each task wins, deleted tasks stay deleted, and views, statuses and properties come from whichever device changed them last. A fresh install that still holds only the sample tasks never overwrites the synced file.
+
+Kept on each device only, in `.obsidian/plugins/routine-timeline/data.json`: calendar addresses, reminder settings, the running stopwatch, and a copy of the synced data as a backup.
+
 ## Data
 
-Tasks, views, statuses, properties and calendar feed addresses are stored in the plugin's own data (`.obsidian/plugins/routine-timeline/data.json`), not in your notes. Moving a repeating task changes its time for every day it repeats.
+Tasks, views, statuses and properties live in the synced vault file above (JSON, readable and easy to back up). Moving a repeating task changes its time for every day it repeats. Status, done state and tracked minutes are stored per day.
 
 ## Network use and privacy
 
 - The plugin makes **no network requests unless you add a calendar**. It then fetches only the iCal address you pasted (for example your Google Calendar secret address), every 30 minutes and when you press refresh
 - No telemetry, analytics, ads, accounts or payments. No data is sent anywhere else
-- Events are kept in memory only. Your tasks, views and calendar addresses are stored locally in this plugin's `data.json`
+- Events are kept in memory only. Calendar addresses are stored only in this device's `data.json`, never in the synced vault file, so they never travel with your notes. Add the address on each device you want to see the calendar on
 - The secret iCal address of a calendar lets anyone who has it read that calendar. Treat `data.json` like a password file: do not commit or share it
 
 ## Limitations
 
 - Calendar events are read-only and come from iCal feeds. Google refreshes those feeds every few hours, so a brand-new event can take a while to appear. Signing in with Google (OAuth) for live updates and creating events is not built yet; see [`docs/dev-plan-views-and-calendar.md`](docs/dev-plan-views-and-calendar.md)
 - Calendar events show in the Calendar layout only, not in the Timeline
-- Repeats are every day or chosen weekdays, with an optional start, count or end date. There is no monthly repeat or per-day exception yet
+- Repeats are every day or chosen weekdays, with an optional start, count or end date. There is no monthly repeat or per-day exception yet, and editing a repeating task changes every day it repeats
+- Sync merges task by task, but if both devices edit the *same* task before syncing, the later edit wins for that task as a whole
+- A task can be at most 24 hours long
 - In the Calendar week view a short block is stretched to a readable minimum, but it always starts at the task's start time
 - In the Week and larger timeline zooms you can move bars and add tasks, but not resize them, and dependency arrows are only drawn in Hours and Day
 - No ← → buttons for bars outside the visible area (the current-time line, dragging and resizing cover most of that)
 - Inline embedding in Live Preview is the least tested part
+
+## Development
+
+There is no framework: the plugin is plain TypeScript in [`src/`](src), bundled into `main.js` by esbuild.
+
+```sh
+npm install
+npm run build     # src/ -> main.js
+npm run dev       # rebuild on change
+npm test          # headless DOM regression tests in tests/
+npm run check     # tsc --noEmit
+```
+
+`main.js`, `styles.css` and `manifest.json` are what a release ships; copy them into `<vault>/.obsidian/plugins/routine-timeline/` to try a build.
 
 ## License
 
