@@ -63,6 +63,8 @@ const overnightEnd = (start, clock) => clock < start ? clock + 1440 : clock;
 const dayIndex = (d, start) => Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - start.getTime()) / 864e5);
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DEFAULT_LEN = 25;
+// "1h 05m" / "45m" for tracked time.
+const fmtDur = (m) => m >= 60 ? `${Math.floor(m / 60)}h ${pad(m % 60)}m` : `${m}m`;
 const nthCache = /* @__PURE__ */ new Map();
 const effUntil = (t) => {
   if (!t.count || !t.from) return t.until || null;
@@ -113,7 +115,7 @@ const cleanStatuses = (v) => {
   if (!list.some((s) => s.done)) list[list.length - 1].done = true;
   return list;
 };
-const PROP_KEYS = ["name", "status", "date", "start", "end", "duration", "group", "repeat", "after"];
+const PROP_KEYS = ["name", "status", "date", "start", "end", "duration", "actual", "group", "repeat", "after"];
 const defaultProps = () => ({
   name: { label: "Name", visible: true },
   status: { label: "Status", visible: true },
@@ -121,6 +123,7 @@ const defaultProps = () => ({
   start: { label: "Start", visible: true },
   end: { label: "End", visible: true },
   duration: { label: "Duration (min)", visible: true },
+  actual: { label: "Actual (min)", visible: true },
   group: { label: "Group", visible: true },
   repeat: { label: "Repeat", visible: true },
   after: { label: "Comes after", visible: true }
@@ -130,7 +133,7 @@ const CUSTOM_LABEL = { text: "Text", number: "Number", checkbox: "Checkbox", sel
 // Column header icons, Notion-style: one per property type so the column's kind of value is
 // recognizable at a glance.
 const CUSTOM_TYPE_ICON = { text: "text", number: "hash", checkbox: "check-square", select: "tags", date: "calendar" };
-const PROP_ICON = { name: "text", status: "circle-dot", date: "calendar", start: "clock", end: "clock", duration: "timer", group: "layers", repeat: "repeat", after: "link" };
+const PROP_ICON = { name: "text", status: "circle-dot", date: "calendar", start: "clock", end: "clock", duration: "timer", actual: "play", group: "layers", repeat: "repeat", after: "link" };
 const cleanProps = (v, order) => {
   const props = defaultProps();
   if (v && typeof v === "object") {
@@ -214,19 +217,36 @@ const cleanView = (v, fallbackName) => ({
   // Table-only: a calculation (sum, average, count, ...) shown in the footer under each column.
   calc: cleanCalc(v.calc)
 });
-const cleanFeeds = (v) => Array.isArray(v) ? v.filter((f) => f && typeof f.url === "string" && f.url.trim()).map((f) => ({
+// A feed's address (a secret iCal URL) stays in this device's local data and is never written to
+// the synced vault file, so a feed that arrived through sync has no url until it is set here too.
+const cleanFeeds = (v) => Array.isArray(v) ? v.filter((f) => f && typeof f === "object" && (typeof f.url === "string" && f.url.trim() || typeof f.id === "string" && f.id)).map((f) => ({
   id: typeof f.id === "string" && f.id ? f.id : uid(),
   name: typeof f.name === "string" && f.name.trim() ? f.name.trim() : "Calendar",
-  url: f.url.trim(),
+  url: typeof f.url === "string" ? f.url.trim() : "",
   color: COLORS.includes(f.color) ? f.color : "green",
   visible: f.visible !== false
 })) : [];
+// Tombstones: id -> when it was deleted, so a merge doesn't bring a deleted task back from the
+// other device. Dropped after 90 days.
+const TOMBSTONE_MS = 90 * 864e5;
+const cleanStamps = (v) => {
+  const out = {};
+  if (!v || typeof v !== "object") return out;
+  for (const k of Object.keys(v).sort()) if (Number.isFinite(v[k]) && v[k] > 0) out[k] = v[k];
+  return out;
+};
+const cleanLog = (v) => {
+  const out = {};
+  if (!v || typeof v !== "object") return out;
+  for (const k of Object.keys(v).sort()) if (/^\d{4}-\d{2}-\d{2}$/.test(k) && Number.isFinite(v[k]) && v[k] > 0) out[k] = Math.round(v[k]);
+  return out;
+};
 const defaultStore = (tasks) => {
   const v = cleanView({ name: "Default view" }, "Default view");
-  return { tasks, views: [v], activeView: v.id, statuses: defaultStatuses(), props: defaultProps(), propOrder: [...PROP_KEYS], feeds: [] };
+  return { tasks, views: [v], activeView: v.id, statuses: defaultStatuses(), props: defaultProps(), propOrder: [...PROP_KEYS], feeds: [], deleted: {}, updatedAt: 0 };
 };
 function seedTasks() {
-  const mk = (title, start, end, group, color, deps = []) => ({ id: uid(), title, start, end, date: null, days: null, from: null, until: null, count: null, custom: {}, notes: "", deps, group, color, doneDates: [], st: {} });
+  const mk = (title, start, end, group, color, deps = []) => ({ id: uid(), title, start, end, date: null, days: null, from: null, until: null, count: null, custom: {}, notes: "", deps, group, color, doneDates: [], st: {}, log: {}, updatedAt: 0 });
   const plan = mk("Morning plan", 7 * 60, 7 * 60 + 30, "Morning", "yellow");
   const deep = mk("Deep work", 9 * 60, 12 * 60, "Work", "blue", [plan.id]);
   return [
@@ -259,14 +279,18 @@ function normalize(raw) {
       group: (_f = t.group) != null ? _f : "",
       color: COLORS.includes(t.color) ? t.color : "blue",
       doneDates: Array.isArray(t.doneDates) ? t.doneDates : [],
-      st: t.st && typeof t.st === "object" && !Array.isArray(t.st) ? { ...t.st } : {}
+      st: t.st && typeof t.st === "object" && !Array.isArray(t.st) ? { ...t.st } : {},
+      // Actual minutes spent, per day (time tracking).
+      log: cleanLog(t.log),
+      // When this task last changed on any device, so two devices' edits can be merged.
+      updatedAt: Number.isFinite(t.updatedAt) ? t.updatedAt : 0
     };
   });
   let views = Array.isArray(s.views) ? s.views.filter((v) => v && typeof v === "object").map((v, i) => cleanView(v, `View ${i + 1}`)) : [];
   if (views.length === 0) views = [cleanView({ ...s.ui || {}, name: "Default view" }, "Default view")];
   const activeView = views.some((v) => v.id === s.activeView) ? s.activeView : views[0].id;
   const pp = cleanProps(s.props, s.propOrder);
-  return { tasks, views, activeView, statuses: cleanStatuses(s.statuses), props: pp.props, propOrder: pp.order, feeds: cleanFeeds(s.feeds) };
+  return { tasks, views, activeView, statuses: cleanStatuses(s.statuses), props: pp.props, propOrder: pp.order, feeds: cleanFeeds(s.feeds), deleted: cleanStamps(s.deleted), updatedAt: Number.isFinite(s.updatedAt) ? s.updatedAt : 0 };
 }
 // A vault can hold several independent task databases ("bases"), each with its own tasks,
 // properties, statuses and saved views - like separate Notion databases. The plugin's saved data
@@ -277,16 +301,78 @@ function normalizeAppData(raw) {
     const bases = raw.bases.filter((b) => b && typeof b === "object").map((b, i) => ({
       id: typeof b.id === "string" && b.id ? b.id : uid(),
       name: typeof b.name === "string" && b.name.trim() ? b.name.trim() : `Base ${i + 1}`,
+      updatedAt: Number.isFinite(b.updatedAt) ? b.updatedAt : 0,
       store: normalize(b.store) || defaultStore([])
     }));
     if (bases.length === 0) return null;
     const activeBaseId = bases.some((b) => b.id === raw.activeBaseId) ? raw.activeBaseId : bases[0].id;
-    return { bases, activeBaseId };
+    return { bases, activeBaseId, deletedBases: cleanStamps(raw.deletedBases) };
   }
   const legacy = normalize(raw);
   if (!legacy) return null;
   const id = uid();
-  return { bases: [{ id, name: "Routine", store: legacy }], activeBaseId: id };
+  return { bases: [{ id, name: "Routine", store: legacy, updatedAt: 0 }], activeBaseId: id, deletedBases: {} };
+}
+// ---- merging two copies of the data (this device's and the synced file's) ---------------
+// Tasks merge one by one: the copy edited most recently wins, and a task missing on one side is
+// kept unless the other side deleted it after its last edit. Views, statuses, properties and feeds
+// come from whichever side changed them last. Local wins ties, so both devices settle on the same
+// result and stop writing.
+function mergeStore(a, b) {
+  const now = Date.now();
+  const deleted = {};
+  for (const src of [a.deleted, b.deleted]) for (const id of Object.keys(src)) if (now - src[id] < TOMBSTONE_MS) deleted[id] = Math.max(deleted[id] || 0, src[id]);
+  const bNewer = b.updatedAt > a.updatedAt;
+  const [first, second] = bNewer ? [b, a] : [a, b];
+  const byId = /* @__PURE__ */ new Map();
+  const tasks = [];
+  const pick = (t, other, otherWinsTie) => {
+    const o = other.tasks.find((x) => x.id === t.id);
+    if (o) return o.updatedAt > t.updatedAt || otherWinsTie && o.updatedAt === t.updatedAt ? o : t;
+    const gone = deleted[t.id];
+    return gone && gone > t.updatedAt ? null : t;
+  };
+  for (const t of first.tasks) {
+    const k = pick(t, second, bNewer);
+    if (k && !byId.has(k.id)) {
+      byId.set(k.id, k);
+      tasks.push(k);
+    }
+  }
+  for (const t of second.tasks) {
+    if (byId.has(t.id)) continue;
+    const k = pick(t, first, !bNewer);
+    if (k) {
+      byId.set(k.id, k);
+      tasks.push(k);
+    }
+  }
+  const rest = bNewer ? b : a;
+  return { ...rest, tasks, deleted: cleanStamps(deleted), updatedAt: Math.max(a.updatedAt, b.updatedAt) };
+}
+function mergeAppData(local, remote) {
+  const now = Date.now();
+  const deletedBases = {};
+  for (const src of [local.deletedBases, remote.deletedBases]) for (const id of Object.keys(src)) if (now - src[id] < TOMBSTONE_MS) deletedBases[id] = Math.max(deletedBases[id] || 0, src[id]);
+  const stamp = (b) => Math.max(b.updatedAt, b.store.updatedAt, ...b.store.tasks.map((t) => t.updatedAt));
+  const bases = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const [mine, theirs] of [[local, remote], [remote, local]]) {
+    for (const b of mine.bases) {
+      if (seen.has(b.id)) continue;
+      seen.add(b.id);
+      const o = theirs.bases.find((x) => x.id === b.id);
+      if (!o) {
+        const gone = deletedBases[b.id];
+        if (!(gone && gone > stamp(b))) bases.push(b);
+        continue;
+      }
+      const [l, r] = mine === local ? [b, o] : [o, b];
+      bases.push({ id: b.id, name: r.updatedAt > l.updatedAt ? r.name : l.name, updatedAt: Math.max(l.updatedAt, r.updatedAt), store: mergeStore(l.store, r.store) });
+    }
+  }
+  const activeBaseId = bases.some((b) => b.id === local.activeBaseId) ? local.activeBaseId : bases[0].id;
+  return { bases, activeBaseId, deletedBases: cleanStamps(deletedBases) };
 }
 // Task data lives in a regular vault file (not the hidden .obsidian folder) so sync tools that
 // only sync notes - LiveSync, Remotely Save, Obsidian Sync - carry it to every device.
@@ -627,7 +713,12 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     this.syncText = null;
     this.syncTimer = null;
     this.syncReady = false;
+    // What each task looked like at the last save, to stamp the ones that changed (see stampChanges).
+    this.snap = /* @__PURE__ */ new Map();
     this.notify = defaultNotify();
+    // The one running stopwatch on this device: { taskId, baseId, date, startedAt }. Per device,
+    // like reminders, so it is kept in local data and never in the synced file.
+    this.timer = null;
     this.notified = /* @__PURE__ */ new Set();
     this.notifiedDay = "";
     this.boards = /* @__PURE__ */ new Set();
@@ -648,10 +739,13 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     const raw = await this.loadData();
     if (raw && typeof raw.syncPath === "string") this.syncPath = cleanSyncPath(raw.syncPath);
     if (raw) this.notify = cleanNotify(raw.notify);
+    const tm = raw && raw.timer;
+    if (tm && typeof tm === "object" && typeof tm.taskId === "string" && typeof tm.baseId === "string" && typeof tm.date === "string" && Number.isFinite(tm.startedAt)) this.timer = { taskId: tm.taskId, baseId: tm.baseId, date: tm.date, startedAt: tm.startedAt };
     const local = normalizeAppData(raw);
     const fromVault = await this.readSyncFile();
     if (fromVault) {
-      this.applySynced(fromVault, local && local.activeBaseId);
+      this.appData = local && !isPristineSeed(local) ? mergeAppData(local, fromVault) : fromVault;
+      this.applySynced(this.appData, local && local.activeBaseId, local);
     } else if (local) {
       this.appData = local;
     } else {
@@ -659,6 +753,7 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
       this.appData = { bases: [{ id, name: "Routine", store: defaultStore(seedTasks()) }], activeBaseId: id };
       await this.saveLocal();
     }
+    this.takeSnapshot();
     const pushLocal = !fromVault && local && !isPristineSeed(local);
     if (this.app && this.app.workspace) this.app.workspace.onLayoutReady(() => void this.startSync(pushLocal));
     this.registerView(VIEW_TYPE, (leaf) => new TimelineView(leaf, this));
@@ -672,6 +767,18 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
       id: "switch-base",
       name: "Switch database",
       callback: () => new BaseSwitcherModal(this.app, this).open()
+    });
+    this.addCommand({
+      id: "toggle-timer",
+      name: "Start or stop the timer for the selected task",
+      callback: () => {
+        const board = [...this.boards].find((b) => !b.opts.embedded) || [...this.boards][0];
+        const id = board && (board.selectedId || board.peekId);
+        const t = id && this.store.tasks.find((x) => x.id === id);
+        if (t) void this.toggleTimer(t, board.statusKey(t));
+        else if (this.timer) void this.stopTimer();
+        else new import_obsidian.Notice("Select a task first.");
+      }
     });
     this.addCommand({
       id: "insert-block",
@@ -761,6 +868,10 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
   // ---- calendar feeds (read-only .ics, e.g. Google Calendar's secret iCal address) --
   async fetchFeed(feed) {
     const prev = this.feedData.get(feed.id);
+    if (!feed.url) {
+      this.feedData.set(feed.id, { events: prev ? prev.events : [], fetched: prev ? prev.fetched : 0, error: "Address not set on this device" });
+      return;
+    }
     try {
       const res = await (0, import_obsidian.requestUrl)({ url: feed.url.replace(/^webcal:/i, "https:"), method: "GET" });
       this.feedData.set(feed.id, { events: parseIcs(res.text), fetched: Date.now(), error: "" });
@@ -802,6 +913,14 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     this.expandCache.clear();
     await this.save();
   }
+  async setFeedUrl(id, url) {
+    const f = this.store.feeds.find((x) => x.id === id);
+    if (!f) return;
+    f.url = url.trim();
+    await this.saveLocal();
+    await this.fetchFeed(f);
+    for (const b of this.boards) b.render();
+  }
   async toggleFeed(id) {
     const f = this.store.feeds.find((x) => x.id === id);
     if (f) f.visible = !f.visible;
@@ -825,7 +944,7 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     for (const b of this.boards) b.render();
   }
   saveLocal() {
-    return this.saveData({ ...this.appData, syncPath: this.syncPath, notify: this.notify });
+    return this.saveData({ ...this.appData, syncPath: this.syncPath, notify: this.notify, timer: this.timer });
   }
   // ---- task reminders ------------------------------------------------------------------
   // Fires once per task per day, inside a 2-minute window after the reminder time, so opening
@@ -836,8 +955,46 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     const delay = 6e4 - Date.now() % 6e4 + 50;
     this.reminderTimer = window.setTimeout(() => {
       this.checkReminders();
+      this.tickTimer();
       this.scheduleReminderTick();
     }, delay);
+  }
+  // ---- time tracking: a stopwatch per task, logging actual minutes per day ----------------
+  isRunning(t) {
+    return !!this.timer && this.timer.taskId === t.id;
+  }
+  runningMinutes(now = Date.now()) {
+    return this.timer ? Math.floor(Math.max(0, now - this.timer.startedAt) / 6e4) : 0;
+  }
+  // Minutes spent on a task on a day: what was logged, plus the running stopwatch if it's this one.
+  actualOn(t, date, now = Date.now()) {
+    const logged = t.log && t.log[date] || 0;
+    return logged + (this.isRunning(t) && this.timer.date === date ? this.runningMinutes(now) : 0);
+  }
+  async startTimer(t, date) {
+    if (this.timer) await this.stopTimer();
+    this.timer = { taskId: t.id, baseId: this.appData.activeBaseId, date, startedAt: Date.now() };
+    await this.saveLocal();
+    for (const b of this.boards) b.render();
+  }
+  async stopTimer(now = Date.now()) {
+    const tm = this.timer;
+    if (!tm) return;
+    this.timer = null;
+    const base = this.appData.bases.find((b) => b.id === tm.baseId);
+    const t = base && base.store.tasks.find((x) => x.id === tm.taskId);
+    const mins = Math.round(Math.max(0, now - tm.startedAt) / 6e4);
+    if (t && mins > 0) t.log = { ...t.log, [tm.date]: (t.log && t.log[tm.date] || 0) + mins };
+    await this.save();
+  }
+  async toggleTimer(t, date) {
+    if (this.isRunning(t)) await this.stopTimer();
+    else await this.startTimer(t, date);
+  }
+  // Once a minute, refresh the running counters in place instead of re-rendering everything.
+  tickTimer() {
+    if (!this.timer) return;
+    for (const b of this.boards) b.updateElapsed();
   }
   checkReminders(now = /* @__PURE__ */ new Date()) {
     const n = this.notify;
@@ -903,12 +1060,47 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     }
   }
   async persist() {
+    this.stampChanges();
     await this.saveLocal();
     this.queueSyncWrite();
   }
+  // The rest of the plugin edits tasks in place and then calls save(), so timestamps are set here by
+  // comparing each task with how it looked at the last save, instead of at every edit site.
+  storeRest(st) {
+    return JSON.stringify({ v: st.views, a: st.activeView, s: st.statuses, p: st.props, o: st.propOrder, f: st.feeds.map((f) => ({ ...f, url: "" })) });
+  }
+  takeSnapshot() {
+    this.snap = /* @__PURE__ */ new Map();
+    for (const b of this.appData.bases) {
+      const tasks = /* @__PURE__ */ new Map();
+      for (const t of b.store.tasks) tasks.set(t.id, JSON.stringify({ ...t, updatedAt: 0 }));
+      this.snap.set(b.id, { tasks, rest: this.storeRest(b.store) });
+    }
+  }
+  stampChanges() {
+    const now = Date.now();
+    for (const b of this.appData.bases) {
+      const prev = this.snap.get(b.id);
+      const st = b.store;
+      const seen = /* @__PURE__ */ new Set();
+      for (const t of st.tasks) {
+        seen.add(t.id);
+        const j = JSON.stringify({ ...t, updatedAt: 0 });
+        if (!prev || prev.tasks.get(t.id) !== j) t.updatedAt = now;
+      }
+      if (prev) {
+        for (const id of prev.tasks.keys()) if (!seen.has(id)) st.deleted = { ...st.deleted, [id]: now };
+      }
+      if (!prev || prev.rest !== this.storeRest(st)) st.updatedAt = now;
+      for (const id of Object.keys(st.deleted)) if (now - st.deleted[id] >= TOMBSTONE_MS) delete st.deleted[id];
+    }
+    this.takeSnapshot();
+  }
   // ---- vault sync file ---------------------------------------------------------------
+  // Feed addresses are secrets, so they stay in this device's data.json and out of the vault file.
   syncJson() {
-    return JSON.stringify({ version: 1, bases: this.appData.bases, activeBaseId: this.appData.activeBaseId }, null, 1);
+    const bases = this.appData.bases.map((b) => ({ ...b, store: { ...b.store, feeds: b.store.feeds.map(({ url, ...f }) => f) } }));
+    return JSON.stringify({ version: 2, bases, activeBaseId: this.appData.activeBaseId, deletedBases: this.appData.deletedBases }, null, 1);
   }
   async readSyncFile() {
     const adapter = this.app && this.app.vault && this.app.vault.adapter;
@@ -926,9 +1118,25 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
   }
   // Keep this device's active database when the synced copy still has it, so switching
   // databases on the phone doesn't yank the desktop along with it.
-  applySynced(data, keepActiveId) {
+  applySynced(data, keepActiveId, prev = this.appData) {
     if (keepActiveId && data.bases.some((b) => b.id === keepActiveId)) data.activeBaseId = keepActiveId;
+    const urls = /* @__PURE__ */ new Map();
+    if (prev) for (const b of prev.bases) for (const f of b.store.feeds) if (f.url) urls.set(f.id, f.url);
+    for (const b of data.bases) for (const f of b.store.feeds) if (!f.url && urls.has(f.id)) f.url = urls.get(f.id);
     this.appData = data;
+    this.takeSnapshot();
+  }
+  // Take in a newer copy of the vault file: merge it with what this device has, and if the result
+  // differs from the file (this device had edits of its own), write it back.
+  async takeIn(data, text) {
+    const merged = mergeAppData(this.appData, data);
+    this.applySynced(merged, this.appData.activeBaseId);
+    this.expandCache.clear();
+    const mine = this.syncJson();
+    this.syncText = text;
+    if (mine !== text) this.queueSyncWrite();
+    await this.saveLocal();
+    for (const b of this.boards) b.render();
   }
   async startSync(pushLocal) {
     const vault = this.app.vault;
@@ -940,9 +1148,7 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     this.syncReady = true;
     const data = await this.readSyncFile();
     if (data) {
-      this.applySynced(data, this.appData.activeBaseId);
-      await this.saveLocal();
-      for (const b of this.boards) b.render();
+      await this.takeIn(data, this.syncText);
     } else if (pushLocal) {
       await this.writeSyncFile();
     }
@@ -963,15 +1169,7 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
       return;
     }
     if (!data) return;
-    if (this.syncTimer) {
-      window.clearTimeout(this.syncTimer);
-      this.syncTimer = null;
-    }
-    this.syncText = text;
-    this.applySynced(data, this.appData.activeBaseId);
-    this.expandCache.clear();
-    await this.saveLocal();
-    for (const b of this.boards) b.render();
+    await this.takeIn(data, text);
   }
   queueSyncWrite() {
     if (!this.syncReady) return;
@@ -1005,12 +1203,8 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     this.syncPath = next;
     this.syncText = null;
     const data = await this.readSyncFile();
-    if (data) {
-      this.applySynced(data, this.appData.activeBaseId);
-      for (const b of this.boards) b.render();
-    } else {
-      await this.writeSyncFile();
-    }
+    if (data) await this.takeIn(data, this.syncText);
+    else await this.writeSyncFile();
     await this.saveLocal();
   }
   // ---- databases ("bases"): separate task lists you switch between, like separate Notion
@@ -1029,7 +1223,7 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
   async createBase(name) {
     const store = defaultStore([]);
     store.views[0].layout = "table";
-    const b = { id: uid(), name: this.uniqueBaseName(name && name.trim() ? name.trim() : "New database"), store };
+    const b = { id: uid(), name: this.uniqueBaseName(name && name.trim() ? name.trim() : "New database"), store, updatedAt: Date.now() };
     this.appData.bases.push(b);
     await this.switchBase(b.id);
     return b;
@@ -1050,11 +1244,13 @@ const RoutineTimelinePlugin = class extends import_obsidian.Plugin {
     const n = name.trim();
     if (!b || !n) return;
     b.name = this.uniqueBaseName(n);
+    b.updatedAt = Date.now();
     await this.save();
   }
   async deleteBase(id) {
     if (this.appData.bases.length <= 1) return;
     this.appData.bases = this.appData.bases.filter((b) => b.id !== id);
+    this.appData.deletedBases = { ...this.appData.deletedBases, [id]: Date.now() };
     if (this.appData.activeBaseId === id) this.appData.activeBaseId = this.appData.bases[0].id;
     await this.save();
   }
@@ -1422,6 +1618,7 @@ const TimelineBoard = class {
     host.empty();
     host.addClass("rt-root");
     host.toggleClass("is-embedded", this.opts.embedded);
+    host.toggleClass("is-phone", !!(import_obsidian.Platform && import_obsidian.Platform.isPhone));
     if (this.opts.embedded) host.style.height = `${(_f = this.opts.height) != null ? _f : 420}px`;
     this.dayStr = ymd(this.day);
     this.lastW = host.clientWidth;
@@ -1544,9 +1741,7 @@ const TimelineBoard = class {
       zb.onclick = (ev) => this.zoomMenu(ev);
     }
     if (!this.sp && this.ui.layout !== "calendar") {
-      const dayTasks = this.plugin.store.tasks.filter((t) => occurs(t, this.day));
-      const done = dayTasks.filter((t) => t.doneDates.includes(dayStr)).length;
-      head.createDiv({ cls: "rt-count", text: `${done}/${dayTasks.length} done` });
+      head.createDiv({ cls: "rt-count", text: this.countText() });
     }
     const search = head.createEl("input", {
       cls: "rt-search",
@@ -2765,7 +2960,9 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       group: this.defaultGroup(),
       color: COLORS[Math.floor(Math.random() * COLORS.length)],
       doneDates: [],
-      st: {}
+      st: {},
+      log: {},
+      updatedAt: 0
     };
     this.plugin.store.tasks.push(t);
     this.focusNewId = t.id;
@@ -2785,6 +2982,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       return dd || "";
     }
     if (k === "duration") return t2.end - t2.start;
+    if (k === "actual") return this.plugin.actualOn(t2, this.statusKey(t2));
     if (k === "start") return t2.start;
     if (k === "end") return t2.end;
     if (k === "group") return t2.group || "";
@@ -2854,6 +3052,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       const dd = t2.date || t2.from;
       td.textContent = dd ? parseYmd(dd).toLocaleDateString(void 0, { day: "numeric", month: "short", year: "numeric" }) + (t2.date ? "" : " \u2192") : "\u2014";
     } else if (k === "duration") td.textContent = String(t2.end - t2.start);
+    else if (k === "actual") this.actualCell(td, t2);
     else if (k === "start") td.textContent = fmt(t2.start);
     else if (k === "end") td.textContent = fmt(t2.end);
     else if (k === "group") {
@@ -2861,6 +3060,49 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     } else if (k === "repeat") td.textContent = repeatLabel(t2);
     else if (k === "after") td.textContent = t2.deps.map((id) => (byId.get(id) || { title: "" }).title).filter(Boolean).join(", ");
     else this.customCell(td, t2, k, props[k]);
+  }
+  // Actual minutes for the row's day, with a play/stop button for the stopwatch.
+  actualCell(td, t) {
+    const date = this.statusKey(t);
+    const running = this.plugin.isRunning(t);
+    td.toggleClass("is-running", running);
+    this.playButton(td, t, date);
+    const mins = this.plugin.actualOn(t, date);
+    const txt = td.createSpan({ cls: "rt-elapsed", text: mins || running ? String(mins) : "" });
+    txt.dataset.id = t.id;
+    txt.dataset.date = date;
+    txt.dataset.fmt = "min";
+  }
+  playButton(parent, t, date) {
+    const running = this.plugin.isRunning(t);
+    const b = parent.createEl("button", { cls: "rt-play", attr: { "aria-label": running ? "Stop timer" : "Start timer" } });
+    b.toggleClass("is-on", running);
+    (0, import_obsidian.setIcon)(b, running ? "square" : "play");
+    b.onclick = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      void this.plugin.toggleTimer(t, date);
+    };
+    return b;
+  }
+  // Refresh the running stopwatch's counters (table cell, bar, header, editor) without a re-render.
+  updateElapsed() {
+    const tm = this.plugin.timer;
+    for (const el of this.host.querySelectorAll(".rt-elapsed[data-id]")) {
+      const t = this.plugin.store.tasks.find((x) => x.id === el.dataset.id);
+      if (!t) continue;
+      const mins = this.plugin.actualOn(t, el.dataset.date);
+      el.textContent = el.dataset.fmt === "min" ? mins || tm && tm.taskId === t.id ? String(mins) : "" : fmtDur(mins);
+    }
+    const head = this.host.querySelector(".rt-count");
+    if (head) head.textContent = this.countText();
+  }
+  // "3/10 done · 1h 20m tracked" for the selected day.
+  countText() {
+    const dayTasks = this.plugin.store.tasks.filter((t) => occurs(t, this.day));
+    const done = dayTasks.filter((t) => t.doneDates.includes(this.dayStr)).length;
+    const tracked = dayTasks.reduce((n, t) => n + this.plugin.actualOn(t, this.dayStr), 0);
+    return `${done}/${dayTasks.length} done${tracked ? ` \xB7 ${fmtDur(tracked)} tracked` : ""}`;
   }
   // Pick a type for a brand new property, then insert it next to `afterKey` (or at the end if null).
   addPropertyMenu(ev, afterKey) {
@@ -3369,6 +3611,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     if (k === "start") return hhmm(task.start);
     if (k === "end") return endClock(task.end);
     if (k === "duration") return String(task.end - task.start);
+    if (k === "actual") return String(task.log && task.log[this.statusKey(task)] || 0);
     if (k === "date") return task.date || task.from || this.dayStr;
     if (customType === "checkbox") return task.custom[k] ? "true" : "";
     return task.custom[k] === void 0 ? "" : String(task.custom[k]);
@@ -3515,6 +3758,12 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       if (!(n > 0)) return "Duration must be at least 1 minute.";
       if (n > DAY) return "Duration can be at most 24 hours (1440 minutes).";
       task.end = task.start + n;
+    } else if (k === "actual") {
+      const n = parseInt(v, 10);
+      if (!(n >= 0)) return "Actual minutes must be 0 or more.";
+      const date = this.statusKey(task);
+      const { [date]: _old, ...rest } = task.log || {};
+      task.log = n > 0 ? { ...rest, [date]: n } : rest;
     } else if (k === "date") {
       if (!v) return "";
       if (task.date !== null) task.date = v;
@@ -3562,6 +3811,9 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     } else if (k === "duration") {
       type = "number";
       value = String(task.end - task.start);
+    } else if (k === "actual") {
+      type = "number";
+      value = String(task.log && task.log[this.statusKey(task)] || 0);
     } else if (k === "date") {
       type = "date";
       value = task.date || task.from || this.dayStr;
@@ -3616,7 +3868,25 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
         options[k] = [...new Set(store.tasks.map((x) => x.custom && x.custom[k]).filter(Boolean))];
       }
     }
-    return { order: store.propOrder, options };
+    const plugin = this.plugin;
+    const board = this;
+    const track = {
+      actual: (id, date) => {
+        const t = store.tasks.find((x) => x.id === id);
+        return t ? plugin.actualOn(t, date) : 0;
+      },
+      running: (id) => !!plugin.timer && plugin.timer.taskId === id,
+      toggle: (id, date) => {
+        const t = store.tasks.find((x) => x.id === id);
+        if (t) void plugin.toggleTimer(t, date);
+      },
+      label: store.props.actual.label,
+      key: (id) => {
+        const t = store.tasks.find((x) => x.id === id);
+        return t ? board.statusKey(t) : board.dayStr;
+      }
+    };
+    return { order: store.propOrder, options, track };
   }
   customCell(td, task, key, def) {
     const v = task.custom ? task.custom[key] : void 0;
@@ -3685,7 +3955,9 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
         days: x.days ? [...x.days] : null,
         custom: { ...x.custom },
         doneDates: [],
-        st: {}
+        st: {},
+        log: {},
+        updatedAt: 0
       });
     }
     this.selected.clear();
@@ -3926,8 +4198,9 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     bar.toggleClass("has-out", !fits);
     // Near the end of the day it would run off the grid, so it ends at the box's right edge and runs left instead.
     bar.toggleClass("out-left", !fits && left + tw + 40 > this.hw * 72 && left + w - tw - 40 > 0);
+    const spent = this.plugin.actualOn(t, this.dayStr);
     bar.title = `${t.title || "Untitled"}
-${fmt(t.start)} \u2013 ${fmt(t.end)}`;
+${fmt(t.start)} \u2013 ${fmt(t.end)}${spent ? ` \xB7 ${fmtDur(spent)} tracked` : ""}`;
   }
   // A dependency arrow needs to know which of the three visible days (k) a bar actually landed on,
   // since yesterday's and tomorrow's occurrences sit in their own columns, not under the selected day.
@@ -3985,6 +4258,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
       cb.onchange = () => void this.toggleDone(t, cb.checked);
       inner.createSpan({ cls: "rt-title", text: t.title || "Untitled" });
       if (t.date === null) (0, import_obsidian.setIcon)(inner.createSpan({ cls: "rt-repeat" }), "repeat");
+      this.barTimer(bar, inner, t);
       bar.createDiv("rt-edge rt-edge-l");
       bar.createDiv("rt-edge rt-edge-r");
       const link = bar.createDiv("rt-link");
@@ -4033,6 +4307,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
     cb.onchange = () => void this.toggleDone(t, cb.checked);
     inner.createSpan({ cls: "rt-title", text: t.title || "Untitled" });
     if (t.date === null) (0, import_obsidian.setIcon)(inner.createSpan({ cls: "rt-repeat" }), "repeat");
+    this.barTimer(bar, inner, t);
     bar.createDiv("rt-edge rt-edge-l");
     bar.createDiv("rt-edge rt-edge-r");
     const link = bar.createDiv("rt-link");
@@ -4040,6 +4315,18 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
     this.place(bar, t);
     this.attachDrag(bar, t);
     this.attachLink(link, t);
+  }
+  // Stopwatch on a timeline bar: a play/stop button at the right end, and the tracked time while it runs.
+  barTimer(bar, inner, t) {
+    const running = this.plugin.isRunning(t);
+    bar.toggleClass("is-running", running);
+    const mins = this.plugin.actualOn(t, this.dayStr);
+    if (mins || running) {
+      const el = inner.createSpan({ cls: "rt-elapsed rt-bar-elapsed", text: fmtDur(mins) });
+      el.dataset.id = t.id;
+      el.dataset.date = this.dayStr;
+    }
+    this.playButton(inner, t, this.dayStr);
   }
   // Move the bar, or drag either edge to change the start or end time.
   // Mouse: drag directly. Touch: tap to select first, then drag, so scrolling still works.
@@ -4049,7 +4336,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
     bar.addEventListener("pointerdown", (e) => {
       lastType = e.pointerType;
       const target = e.target;
-      if (target.closest("input") || target.closest(".rt-link")) return;
+      if (target.closest("input") || target.closest(".rt-link") || target.closest(".rt-play")) return;
       if (e.pointerType !== "mouse" && this.selectedId !== t.id) return;
       const mode = target.closest(".rt-edge-l") ? "start" : target.closest(".rt-edge-r") ? "end" : "move";
       e.preventDefault();
@@ -4100,7 +4387,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
     });
     bar.addEventListener("click", (e) => {
       const target = e.target;
-      if (target.closest("input") || target.closest(".rt-link")) return;
+      if (target.closest("input") || target.closest(".rt-link") || target.closest(".rt-play")) return;
       if (Date.now() - lastDragEnd < 80) return;
       if (lastType !== "mouse" && this.selectedId !== t.id) {
         this.select(t.id);
@@ -4363,7 +4650,9 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}`;
       group: preset.group !== void 0 ? preset.group : this.defaultGroup(),
       color: "blue",
       doneDates: [],
-      st: {}
+      st: {},
+      log: {},
+      updatedAt: 0
     };
     if (preset.status) withStatus(t, dayStr, preset.status, this.plugin.store.statuses);
     new TaskModal(
@@ -4541,8 +4830,22 @@ const RoutineSettingTab = class extends import_obsidian.PluginSettingTab {
     new import_obsidian.Setting(el).setName("Calendars").setDesc("Show Google Calendar events (or any .ics feed) in the Calendar layout. In Google Calendar open Settings, pick a calendar and copy its Secret address in iCal format. It is read-only and refreshes every 30 minutes. Treat the address like a password.").setHeading();
     for (const f of this.plugin.store.feeds) {
       const data = this.plugin.feedData.get(f.id);
-      const status = data ? data.error ? `Error: ${data.error}` : `${data.events.length} events, updated ${new Date(data.fetched).toLocaleTimeString()}` : "Not loaded yet";
-      new import_obsidian.Setting(el).setName(f.name).setDesc(status).addToggle((tg) => tg.setValue(f.visible).onChange(async (v) => {
+      const status = !f.url ? "This calendar came from another device. Its address is kept out of the synced file, so paste it here too." : data ? data.error ? `Error: ${data.error}` : `${data.events.length} events, updated ${new Date(data.fetched).toLocaleTimeString()}` : "Not loaded yet";
+      const row = new import_obsidian.Setting(el).setName(f.name).setDesc(status);
+      if (!f.url) {
+        let u = "";
+        row.addText((t) => {
+          t.inputEl.addClass("rt-setting-path");
+          t.setPlaceholder("https://calendar.google.com/calendar/ical/...").onChange((v) => {
+            u = v;
+          });
+        }).addButton((b) => b.setButtonText("Set address").setCta().onClick(async () => {
+          if (!u.trim()) return;
+          await this.plugin.setFeedUrl(f.id, u);
+          this.display();
+        }));
+      }
+      row.addToggle((tg) => tg.setValue(f.visible).onChange(async (v) => {
         f.visible = v;
         await this.plugin.save();
       })).addButton((b) => b.setButtonText("Remove").setWarning().onClick(async () => {
@@ -4563,7 +4866,7 @@ const RoutineSettingTab = class extends import_obsidian.PluginSettingTab {
   syncSection(el) {
     new import_obsidian.Setting(el).setName("Sync").setHeading();
     let pathInput = this.plugin.syncPath;
-    new import_obsidian.Setting(el).setName("Data file").setDesc("Your tasks, databases and views are saved in this vault file, so any sync that carries your notes (LiveSync, Obsidian Sync, Remotely Save, iCloud) also carries them to your phone. Use the same path on every device.").addText((t) => {
+    new import_obsidian.Setting(el).setName("Data file").setDesc("Your tasks, databases and views are saved in this vault file, so any sync that carries your notes (LiveSync, Obsidian Sync, Remotely Save, iCloud) also carries them to your phone. Use the same path on every device. Edits made on two devices are merged task by task. Calendar addresses, reminders and the timer stay on each device.").addText((t) => {
       t.inputEl.addClass("rt-setting-path");
       t.setPlaceholder(DEFAULT_SYNC_PATH).setValue(this.plugin.syncPath).onChange((v) => {
         pathInput = v;
@@ -4892,6 +5195,29 @@ const TaskModal = class extends import_obsidian.Modal {
         dd.setValue(statusOf(d, this.dayStr, this.statuses).id).onChange((v) => {
           const s = this.statuses.find((x) => x.id === v);
           if (s) withStatus(d, this.dayStr, s, this.statuses);
+        });
+      });
+    }
+    const track = this.extra.track;
+    if (track && !this.isNew) {
+      const date = track.key(d.id);
+      const row = new import_obsidian.Setting(contentEl).setName(track.label).setDesc(`Time spent on ${date}.`);
+      const val = row.controlEl.createSpan({ cls: "rt-elapsed rt-modal-elapsed", text: fmtDur(track.actual(d.id, date)) });
+      val.dataset.id = d.id;
+      val.dataset.date = date;
+      row.addButton((b) => {
+        const draw = () => {
+          const on = track.running(d.id);
+          b.setButtonText(on ? "Stop" : "Start");
+          b.buttonEl.toggleClass("is-on", on);
+        };
+        draw();
+        b.onClick(() => {
+          track.toggle(d.id, date);
+          window.setTimeout(() => {
+            draw();
+            val.textContent = fmtDur(track.actual(d.id, date));
+          }, 50);
         });
       });
     }

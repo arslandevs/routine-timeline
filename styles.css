@@ -1994,3 +1994,75 @@
 	color: var(--text-muted);
 	font-size: var(--font-ui-small);
 }
+
+/* Time tracking: play/stop button and tracked minutes */
+.rt-play {
+	flex: 0 0 auto;
+	width: 20px;
+	height: 20px;
+	padding: 0;
+	margin: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 50%;
+	background: var(--background-modifier-hover);
+	box-shadow: none;
+	color: var(--text-muted);
+	cursor: pointer;
+}
+.rt-play svg {
+	width: 11px;
+	height: 11px;
+}
+.rt-play.is-on {
+	background: var(--color-red);
+	color: #fff;
+}
+td .rt-play {
+	margin-right: 6px;
+	opacity: 0;
+	vertical-align: middle;
+}
+tr:hover td .rt-play,
+td.is-running .rt-play,
+.is-phone td .rt-play {
+	opacity: 1;
+}
+.rt-bar .rt-play {
+	margin-left: auto;
+	opacity: 0;
+}
+.rt-bar:hover .rt-play,
+.rt-bar.is-selected .rt-play,
+.rt-bar.is-running .rt-play {
+	opacity: 1;
+}
+.rt-bar.is-narrow .rt-play,
+.rt-bar.is-narrow .rt-bar-elapsed {
+	display: none;
+}
+.rt-bar-elapsed {
+	flex: 0 0 auto;
+	font-size: var(--font-ui-smaller);
+	opacity: 0.85;
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
+}
+.rt-bar.is-running .rt-bar-in {
+	outline: 2px solid var(--color-red);
+	outline-offset: -2px;
+	animation: rt-pulse 2s ease-in-out infinite;
+}
+@keyframes rt-pulse {
+	0%, 100% { outline-color: var(--color-red); }
+	50% { outline-color: transparent; }
+}
+.rt-modal-elapsed {
+	margin-right: 10px;
+	font-variant-numeric: tabular-nums;
+	color: var(--text-muted);
+}
+.rt-elapsed {
+	font-variant-numeric: tabular-nums;
+}
