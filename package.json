@@ -1,6 +1,6 @@
 {
   "name": "routine-timeline",
-  "version": "0.25.0",
+  "version": "0.25.1",
   "description": "Plan tasks and routines in Obsidian with Table, Board, Timeline and Calendar views, repeating tasks, time tracking, reminders and sync through a vault file.",
   "main": "main.js",
   "private": true,
@@ -8,15 +8,22 @@
     "dev": "node esbuild.config.mjs",
     "build": "tsc --noEmit && node esbuild.config.mjs production",
     "check": "tsc --noEmit",
-    "test": "node tests/run.js"
+    "test": "node tests/run.js",
+    "lint": "eslint src"
   },
-  "keywords": ["obsidian", "obsidian-plugin", "tasks", "timeline", "routine"],
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "tasks",
+    "timeline",
+    "routine"
+  ],
   "author": "Arsalan",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.11.0",
-    "builtin-modules": "^3.3.0",
     "esbuild": "^0.24.0",
+    "eslint-plugin-obsidianmd": "^0.4.2",
     "jsdom": "^25.0.0",
     "obsidian": "^1.7.2",
     "tslib": "^2.6.2",

@@ -18,6 +18,10 @@ P.createEl = function (tag, o = {}) {
   this.appendChild(e);
   return e;
 };
+P.setCssStyles = function (s) { Object.assign(this.style, s); };
+P.setCssProps = function (p) { for (const k in p) this.style.setProperty(k, p[k]); };
+w.createEl = (tag, o) => w.document.createElement('div').createEl(tag, o);
+w.createFragment = () => { const f = w.document.createDocumentFragment(); f.createDiv = (o) => { const d = w.document.createElement('div'); d.createDiv = P.createDiv; f.appendChild(d); return P.createEl.call(d, 'div', typeof o === 'string' ? { cls: o } : o); }; return f; };
 P.createDiv = function (o) { return this.createEl("div", typeof o === "string" ? { cls: o } : o); };
 P.createSpan = function (o) { return this.createEl("span", typeof o === "string" ? { cls: o } : o); };
 P.empty = function () { while (this.firstChild) this.removeChild(this.firstChild); };
@@ -62,8 +66,9 @@ class Setting {
   addButton(cb) { const buttonEl = this.controlEl.createEl("button"); cb({ buttonEl, setButtonText(t) { buttonEl.textContent = t; return this; }, setCta() { return this; }, setWarning() { return this; }, setIcon() { return this; }, setTooltip() { return this; }, onClick(f) { buttonEl.onclick = f; return this; } }); return this; }
   addExtraButton(cb) { return this.addButton(cb); }
 }
+class TFile { constructor(path) { this.path = path; } }
 const stub = {
-  Plugin, Menu, Setting,
+  Plugin, Menu, Setting, TFile,
   PluginSettingTab: class { constructor(app, plugin) { this.app = app; this.plugin = plugin; this.containerEl = w.document.body.createDiv(); } },
   ItemView: class { constructor(leaf) { this.leaf = leaf; this.contentEl = w.document.body.createDiv(); } },
   MarkdownRenderChild: class { constructor(el) { this.containerEl = el; } },
@@ -83,7 +88,7 @@ function fakeApp(fs) {
   const listeners = { modify: [], create: [] };
   const vault = {
     adapter: { exists: async (p) => fs.has(p), read: async (p) => { if (!fs.has(p)) throw new Error("ENOENT"); return fs.get(p); } },
-    getAbstractFileByPath: (p) => fs.has(p) ? { path: p } : null,
+    getAbstractFileByPath: (p) => fs.has(p) ? new TFile(p) : null,
     modify: async (f, text) => { fs.set(f.path, text); for (const cb of listeners.modify) cb(f); },
     create: async (p, text) => { fs.set(p, text); const f = { path: p }; for (const cb of listeners.create) cb(f); return f; },
     createFolder: async () => {},

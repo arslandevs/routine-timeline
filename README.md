@@ -8,7 +8,7 @@ A Notion-style task and routine planner for Obsidian. One set of tasks, four lay
 
 **[⬇ Download the latest release](https://github.com/arslandevs/routine-timeline/releases/latest)** · [Install](#install) · [Views](#views) · [Tasks](#tasks) · [Time tracking](#time-tracking) · [Reminders](#reminders) · [Sync](#sync-between-devices) · [Development](#development)
 
-> **Status: v0.25.0, in daily use but still young.** The regression tests in [`tests/`](tests) run the real plugin in a headless DOM (`npm test`) and cover sync, time tracking, overnight tasks, reminders and the phone layout. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
+> **Status: v0.25.1, in daily use but still young.** The regression tests in [`tests/`](tests) run the real plugin in a headless DOM (`npm test`) and cover sync, time tracking, overnight tasks, reminders and the phone layout. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
 
 ## What it looks like
 
@@ -225,9 +225,12 @@ npm run build     # src/ -> main.js
 npm run dev       # rebuild on change
 npm test          # headless DOM regression tests in tests/
 npm run check     # tsc --noEmit
+npm run lint      # same eslint rules as the Obsidian directory scan
 ```
 
 `main.js`, `styles.css` and `manifest.json` are what a release ships; copy them into `<vault>/.obsidian/plugins/routine-timeline/` to try a build.
+
+**Releasing:** bump the version in `manifest.json`, `package.json` and `versions.json`, optionally add `release-notes/<version>.md`, commit, then push a tag with the bare version (`git tag 0.25.1 && git push origin 0.25.1`). The Release workflow builds from source, runs the tests, adds GitHub artifact attestations and publishes `main.js`, `manifest.json` and `styles.css`.
 
 ## License
 

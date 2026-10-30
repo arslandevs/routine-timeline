@@ -234,11 +234,10 @@ export function seedTasks() {
   ];
 }
 export function normalize(raw) {
-  var _a, _b, _c, _d, _e;
   const s = raw;
   if (!s || !Array.isArray(s.tasks)) return null;
   const tasks = s.tasks.map((t) => {
-    var _a2, _b2, _c2, _d2, _e2, _f;
+    let _a2, _b2, _c2, _d2, _e2, _f;
     return {
       id: (_a2 = t.id) != null ? _a2 : uid(),
       title: (_b2 = t.title) != null ? _b2 : "",

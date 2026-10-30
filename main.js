@@ -254,11 +254,10 @@ function seedTasks() {
   ];
 }
 function normalize(raw) {
-  var _a, _b, _c, _d, _e;
   const s = raw;
   if (!s || !Array.isArray(s.tasks)) return null;
   const tasks = s.tasks.map((t) => {
-    var _a2, _b2, _c2, _d2, _e2, _f;
+    let _a2, _b2, _c2, _d2, _e2, _f;
     return {
       id: (_a2 = t.id) != null ? _a2 : uid(),
       title: (_b2 = t.title) != null ? _b2 : "",
@@ -1497,8 +1496,7 @@ var TimelineBoard = class {
   }
   // ---- data for the current day -------------------------------------------------
   compute() {
-    var _a;
-    const dayStr = this.dayStr;
+    let _a;
     const q = this.q.trim().toLowerCase();
     const ui = this.ui;
     const sp = this.sp;
@@ -1585,7 +1583,7 @@ var TimelineBoard = class {
   }
   // ---- rendering ---------------------------------------------------------------
   render() {
-    var _a, _b, _c, _d, _e, _f;
+    let _a, _c, _e, _f;
     const host = this.host;
     const search = host.querySelector(".rt-search");
     const refocus = !!search && document.activeElement === search;
@@ -1671,7 +1669,6 @@ var TimelineBoard = class {
     return b;
   }
   renderToolbar(host) {
-    const dayStr = this.dayStr;
     const head = host.createDiv("rt-head");
     if (this.ui.layout === "calendar") {
       const sb = head.createEl("button", { cls: "clickable-icon", attr: { "aria-label": "Toggle calendar sidebar" } });
@@ -2121,7 +2118,7 @@ var TimelineBoard = class {
   // Hover an empty spot of the grid: a dashed 25-minute block shows at the start of that hour. Click it to add a task there.
   enableHoverAdd(canvas, rows) {
     const ghost = canvas.createDiv("rt-ghost");
-    ghost.style.display = "none";
+    ghost.setCssStyles({ display: "none" });
     let hour = null;
     const skip = (t) => t.closest(".rt-bar, .rt-hours, .rt-new, .rt-ghead, .rt-empty, button, .rt-dot") || t.closest(".rt-deps") && t.tagName !== "svg";
     const at = (e) => {
@@ -2137,25 +2134,25 @@ var TimelineBoard = class {
     canvas.addEventListener("mousemove", (e) => {
       const p = at(e);
       if (!p) {
-        ghost.style.display = "none";
+        ghost.setCssStyles({ display: "none" });
         hour = null;
         return;
       }
       hour = p.h;
-      ghost.style.display = "flex";
+      ghost.setCssStyles({ display: "flex" });
       ghost.style.left = `${p.g * this.hw + 2}px`;
       ghost.style.top = `${rows.offsetTop + p.row * ROW_H + 6}px`;
       ghost.style.width = `${Math.max(Math.round(DEFAULT_LEN / 60 * this.hw), 74)}px`;
       ghost.textContent = `+ ${clockLabel(p.h * 60)}`;
     });
     canvas.addEventListener("mouseleave", () => {
-      ghost.style.display = "none";
+      ghost.setCssStyles({ display: "none" });
       hour = null;
     });
     canvas.addEventListener("click", (e) => {
       const p = at(e);
       if (!p || hour === null) return;
-      ghost.style.display = "none";
+      ghost.setCssStyles({ display: "none" });
       const dd = new Date(this.day.getFullYear(), this.day.getMonth(), this.day.getDate() + p.k);
       this.addTask({ start: p.h * 60, date: ymd(dd) });
     });
@@ -2186,7 +2183,7 @@ var TimelineBoard = class {
     const canvas = scroller.createDiv("rt-canvas is-span");
     this.watchEdges(scroller);
     canvas.style.width = `${sp.total}px`;
-    canvas.style.backgroundImage = "none";
+    canvas.setCssStyles({ backgroundImage: "none" });
     for (const c of sp.cells) {
       const line = canvas.createDiv("rt-vline");
       line.style.left = `${c.left}px`;
@@ -2344,7 +2341,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     const w = sp.dayW;
     const precise = w >= 56;
     const ghost = canvas.createDiv("rt-ghost");
-    ghost.style.display = "none";
+    ghost.setCssStyles({ display: "none" });
     let pick = null;
     const skip = (t) => t.closest(".rt-bar, .rt-hours, .rt-new, .rt-ghead, .rt-empty, button");
     const at = (e) => {
@@ -2362,12 +2359,12 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     canvas.addEventListener("mousemove", (e) => {
       const p = at(e);
       if (!p) {
-        ghost.style.display = "none";
+        ghost.setCssStyles({ display: "none" });
         pick = null;
         return;
       }
       pick = p;
-      ghost.style.display = "flex";
+      ghost.setCssStyles({ display: "flex" });
       ghost.style.left = `${p.i * w + (p.hour === null ? 0 : p.hour / 24 * w) + 2}px`;
       ghost.style.top = `${rows.offsetTop + p.row * ROW_H + 6}px`;
       ghost.style.width = `${precise ? Math.max(Math.round(DEFAULT_LEN / 1440 * w), 96) : Math.max(Math.round(w) - 3, 74)}px`;
@@ -2375,13 +2372,13 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       ghost.textContent = precise ? `+ ${day}, ${clockLabel(p.hour * 60)}` : `+ ${day}`;
     });
     canvas.addEventListener("mouseleave", () => {
-      ghost.style.display = "none";
+      ghost.setCssStyles({ display: "none" });
       pick = null;
     });
     canvas.addEventListener("click", (e) => {
       const p = at(e);
       if (!p || !pick) return;
-      ghost.style.display = "none";
+      ghost.setCssStyles({ display: "none" });
       this.addTask({ date: ymd(p.date), start: p.hour === null ? 9 * 60 : p.hour * 60 });
     });
   }
@@ -3115,7 +3112,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     const props = store.props;
     const panel = document.body.createDiv("rt-colmenu rt-propvis");
     const pad2 = 8;
-    panel.style.visibility = "hidden";
+    panel.setCssStyles({ visibility: "hidden" });
     const place = () => {
       const r = panel.getBoundingClientRect();
       const vw = window.innerWidth, vh = window.innerHeight;
@@ -3124,7 +3121,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       if (y + r.height + pad2 > vh) y = vh - r.height - pad2;
       panel.style.left = `${Math.max(pad2, x)}px`;
       panel.style.top = `${Math.max(pad2, y)}px`;
-      panel.style.visibility = "visible";
+      panel.setCssStyles({ visibility: "visible" });
     };
     const searchWrap = panel.createDiv("rt-colmenu-filter");
     const searchInput = searchWrap.createEl("input", { type: "text", attr: { placeholder: "Search for a property\u2026" } });
@@ -3201,7 +3198,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     const OP_LABEL = { eq: "is", neq: "is not", contains: "contains", empty: "is empty", notEmpty: "is not empty", gt: ">", lt: "<", checked: "checked", unchecked: "unchecked" };
     const panel = document.body.createDiv("rt-colmenu rt-colorpanel");
     const pad2 = 8;
-    panel.style.visibility = "hidden";
+    panel.setCssStyles({ visibility: "hidden" });
     const place = () => {
       const r = panel.getBoundingClientRect();
       const vw = window.innerWidth, vh = window.innerHeight;
@@ -3211,7 +3208,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       if (y + r.height + pad2 > vh) y = vh - r.height - pad2;
       panel.style.left = `${Math.max(pad2, x)}px`;
       panel.style.top = `${Math.max(pad2, y)}px`;
-      panel.style.visibility = "visible";
+      panel.setCssStyles({ visibility: "visible" });
     };
     const list = panel.createDiv("rt-colorrule-list");
     const visibleProps = () => this.plugin.store.propOrder.filter((k) => props[k] && (k === "name" || props[k].visible));
@@ -3302,7 +3299,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     const panel = document.body.createDiv("rt-colmenu");
     const pad2 = 8;
     const vw = window.innerWidth, vh = window.innerHeight;
-    panel.style.visibility = "hidden";
+    panel.setCssStyles({ visibility: "hidden" });
     const place = () => {
       const r = panel.getBoundingClientRect();
       let left = ev.clientX;
@@ -3311,7 +3308,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       if (top + r.height + pad2 > vh) top = ev.clientY - r.height - 4;
       panel.style.left = `${Math.max(pad2, left)}px`;
       panel.style.top = `${Math.max(pad2, top)}px`;
-      panel.style.visibility = "visible";
+      panel.setCssStyles({ visibility: "visible" });
     };
     const off = () => {
       document.removeEventListener("pointerdown", onOutside, true);
@@ -3667,7 +3664,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       lastIdx = idx;
       highlight(idx);
     };
-    const onUp = async () => {
+    const onUp = () => {
       document.removeEventListener("pointermove", onMove);
       document.removeEventListener("pointerup", onUp);
       rows.forEach((r, i) => {
@@ -3682,7 +3679,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
         const task = this.plugin.store.tasks.find((x) => x.id === id);
         if (task) this.writeCellValue(task, key, srcVal, customType);
       }
-      await this.plugin.save();
+      void this.plugin.save();
     };
     document.addEventListener("pointermove", onMove);
     document.addEventListener("pointerup", onUp);
@@ -4152,7 +4149,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
   textWidth(str) {
     try {
       if (this.measureCtx === void 0) {
-        const c = document.createElement("canvas");
+        const c = createEl("canvas");
         this.measureCtx = c.getContext ? c.getContext("2d") : null;
       }
       if (this.measureCtx) {
@@ -4216,9 +4213,9 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${spent ? ` \xB7 ${fmtDur(spent)} tracked` :
   // compact row index instead of sharing a row with the task's other-day instances.
   renderDayBar(parent, t, k, rowIndex) {
     const row = parent.createDiv("rt-row");
-    row.style.position = "absolute";
-    row.style.left = "0";
-    row.style.right = "0";
+    row.setCssStyles({ position: "absolute" });
+    row.setCssStyles({ left: "0" });
+    row.setCssStyles({ right: "0" });
     row.style.top = `${rowIndex * ROW_H}px`;
     row.style.height = `${ROW_H}px`;
     this.markBarInstance(t.id, k);
@@ -4388,7 +4385,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${spent ? ` \xB7 ${fmtDur(spent)} tracked` :
       let target = null;
       const clearTarget = () => this.bars.forEach((b) => b.removeClass("is-link-target"));
       const onMove = (ev) => {
-        var _a, _b, _c, _d;
+        let _a, _b, _c, _d;
         const r = rows.getBoundingClientRect();
         temp.setAttribute("d", curve(x1, y1, ev.clientX - r.left, ev.clientY - r.top));
         const id = (_b = (_a = document.elementFromPoint(ev.clientX, ev.clientY)) == null ? void 0 : _a.closest(".rt-bar")) == null ? void 0 : _b.dataset.id;
@@ -4484,11 +4481,13 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${spent ? ` \xB7 ${fmtDur(spent)} tracked` :
           x.setAttribute("d", "M-3,-3 L3,3 M3,-3 L-3,3");
           g.appendChild(c);
           g.appendChild(x);
-          g.addEventListener("click", async (e) => {
-            e.stopPropagation();
-            t.deps = t.deps.filter((i) => i !== depId);
-            this.selectedLink = null;
-            await this.plugin.save();
+          g.addEventListener("click", (e) => {
+            void (async () => {
+              e.stopPropagation();
+              t.deps = t.deps.filter((i) => i !== depId);
+              this.selectedLink = null;
+              await this.plugin.save();
+            })();
           });
           svg.appendChild(g);
         }
@@ -4940,7 +4939,7 @@ var RoutineTimelinePlugin = class extends import_obsidian4.Plugin {
       leaf = this.app.workspace.getLeaf("tab");
       await leaf.setViewState({ type: VIEW_TYPE, active: true });
     }
-    this.app.workspace.revealLeaf(leaf);
+    this.app.workspace.setActiveLeaf(leaf, { focus: true });
   }
   groupNames() {
     return [...new Set(this.store.tasks.map((t) => t.group).filter(Boolean))].sort(
@@ -5042,7 +5041,7 @@ var RoutineTimelinePlugin = class extends import_obsidian4.Plugin {
     const mobile = !!(import_obsidian4.Platform && import_obsidian4.Platform.isMobile);
     const canSystem = !!N && !mobile && N.permission !== "denied";
     const banner = () => {
-      const frag = document.createDocumentFragment();
+      const frag = createFragment();
       frag.createDiv({ cls: "rt-notice-title", text: title });
       frag.createDiv({ cls: "rt-notice-body", text: body });
       new import_obsidian4.Notice(frag, 15e3);
@@ -5197,7 +5196,7 @@ var RoutineTimelinePlugin = class extends import_obsidian4.Plugin {
     try {
       const existing = vault.getAbstractFileByPath(this.syncPath);
       if (existing) {
-        await vault.modify(existing, text);
+        if (existing instanceof import_obsidian4.TFile) await vault.modify(existing, text);
       } else {
         const dir = this.syncPath.includes("/") ? this.syncPath.slice(0, this.syncPath.lastIndexOf("/")) : "";
         if (dir && !vault.getAbstractFileByPath(dir)) await vault.createFolder(dir).catch(() => {

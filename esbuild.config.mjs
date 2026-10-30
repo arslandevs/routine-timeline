@@ -1,6 +1,6 @@
 import esbuild from "esbuild";
 import process from "process";
-import builtins from "builtin-modules";
+import { builtinModules } from "node:module";
 
 const banner = `/*
 Routine Timeline for Obsidian. Built from src/ with esbuild; see the repository for the source.
@@ -11,7 +11,7 @@ const context = await esbuild.context({
   banner: { js: banner },
   entryPoints: ["src/main.ts"],
   bundle: true,
-  external: ["obsidian", "electron", "@codemirror/*", "@lezer/*", ...builtins],
+  external: ["obsidian", "electron", "@codemirror/*", "@lezer/*", ...builtinModules],
   format: "cjs",
   target: "es2018",
   logLevel: "info",

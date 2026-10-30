@@ -1,4 +1,3 @@
-import { uid } from "./util";
 
 // ---- iCalendar (.ics) parsing and recurrence expansion for read-only calendar feeds
 export const icsUnfold = (text) => text.replace(/\r?\n[ \t]/g, "").split(/\r?\n/);
@@ -51,7 +50,8 @@ export function wallToMs(w, kind, tz) {
       const off2 = tzOffsetMs(ms, tz);
       if (off2 !== off) ms = guess - off2;
       return ms;
-    } catch (e) {
+    } catch {
+      // fall through: caller treats undefined as "unknown offset"
     }
   }
   return new Date(w.y, w.m - 1, w.d, w.h, w.mi, w.s).getTime();

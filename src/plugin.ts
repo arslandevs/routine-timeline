@@ -246,7 +246,7 @@ export class RoutineTimelinePlugin extends Plugin {
       leaf = this.app.workspace.getLeaf("tab");
       await leaf.setViewState({ type: VIEW_TYPE, active: true });
     }
-    this.app.workspace.revealLeaf(leaf);
+    this.app.workspace.setActiveLeaf(leaf, { focus: true });
   }
   groupNames() {
     return [...new Set<string>(this.store.tasks.map((t) => t.group).filter(Boolean))].sort(
@@ -348,7 +348,7 @@ export class RoutineTimelinePlugin extends Plugin {
     const mobile = !!(Platform && Platform.isMobile);
     const canSystem = !!N && !mobile && N.permission !== "denied";
     const banner = () => {
-      const frag = document.createDocumentFragment();
+      const frag = createFragment();
       frag.createDiv({ cls: "rt-notice-title", text: title });
       frag.createDiv({ cls: "rt-notice-body", text: body });
       new Notice(frag, 15e3);
@@ -472,14 +472,14 @@ export class RoutineTimelinePlugin extends Plugin {
     let text;
     try {
       text = await adapter.read(this.syncPath);
-    } catch (e) {
+    } catch {
       return;
     }
     if (text === this.syncText) return;
     let data;
     try {
       data = normalizeAppData(JSON.parse(text));
-    } catch (e) {
+    } catch {
       return;
     }
     if (!data) return;
@@ -501,7 +501,7 @@ export class RoutineTimelinePlugin extends Plugin {
     try {
       const existing = vault.getAbstractFileByPath(this.syncPath);
       if (existing) {
-        await vault.modify(existing as TFile, text);
+        if (existing instanceof TFile) await vault.modify(existing, text);
       } else {
         const dir = this.syncPath.includes("/") ? this.syncPath.slice(0, this.syncPath.lastIndexOf("/")) : "";
         if (dir && !vault.getAbstractFileByPath(dir)) await vault.createFolder(dir).catch(() => {});
