@@ -71,6 +71,26 @@ export const occurs = (t, d) => {
   const u = effUntil(t);
   return !(u && s > u);
 };
+// Start and end of t's occurrence on day d, in ms (minutes past midnight may run past 24:00).
+export const occSpan = (t, d) => ({
+  s: new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, t.start).getTime(),
+  e: new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, t.end).getTime()
+});
+// The occurrence of t happening at `now` (one that began yesterday and runs past midnight counts):
+// { key, s, e } where key is the status date of that occurrence, or null.
+export const nowOccurrence = (t, now = new Date()) => {
+  const at = now.getTime();
+  for (const k of [0, -1]) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + k);
+    if (!occurs(t, d)) continue;
+    const { s, e } = occSpan(t, d);
+    if (s <= at && at < e) return { key: t.date !== null ? t.date : ymd(d), s, e };
+  }
+  return null;
+};
+// "Not started" and "In progress" in a database's status list (the first status is the default).
+export const idleStatus = (sts) => sts.find((s) => s.id === "not-started") || sts[0];
+export const progressStatus = (sts) => sts.find((s) => s.id === "in-progress") || sts.find((s) => !s.done && /progress|doing|active/i.test(s.name)) || null;
 export const repeatLabel = (t) => {
   if (t.date !== null) return "Once";
   const base = !t.days || t.days.length === 7 ? "Every day" : [...t.days].sort((a, b) => a - b).map((n) => DOW[n]).join(", ");

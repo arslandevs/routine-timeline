@@ -153,6 +153,12 @@ export class RoutineSettingTab extends PluginSettingTab {
     }));
   }
   calendarSection(el) {
+    new Setting(el).setName("Status").setHeading();
+    new Setting(el).setName("Status follows the clock").setDesc("When a task's start time arrives, Not started becomes In progress; when it ends, it becomes Done. Only moments that pass are applied, so a status you change by hand stays as you set it. Saved on this device only.").addToggle((tg) => tg.setValue(this.plugin.clock.autoStatus).onChange(async (v) => {
+      this.plugin.clock.autoStatus = v;
+      this.plugin.clock.last = Date.now();
+      await this.plugin.saveLocal();
+    }));
     new Setting(el).setName("Calendars").setDesc("Show Google Calendar events (or any .ics feed) in the Calendar layout. In Google Calendar open Settings, pick a calendar and copy its Secret address in iCal format. It is read-only and refreshes every 30 minutes. Treat the address like a password.").setHeading();
     for (const f of this.plugin.store.feeds) {
       const data = this.plugin.feedData.get(f.id);

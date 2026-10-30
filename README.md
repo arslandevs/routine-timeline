@@ -8,7 +8,7 @@ A Notion-style task and routine planner for Obsidian. One set of tasks, four lay
 
 **[⬇ Download the latest release](https://github.com/arslandevs/routine-timeline/releases/latest)** · [Install](#install) · [Views](#views) · [Tasks](#tasks) · [Time tracking](#time-tracking) · [Reminders](#reminders) · [Sync](#sync-between-devices) · [Development](#development)
 
-> **Status: v0.25.2, in daily use but still young.** The regression tests in [`tests/`](tests) run the real plugin in a headless DOM (`npm test`) and cover sync, time tracking, overnight tasks, reminders and the phone layout. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
+> **Status: v0.26.0, in daily use but still young.** The regression tests in [`tests/`](tests) run the real plugin in a headless DOM (`npm test`) and cover sync, time tracking, overnight tasks, reminders and the phone layout. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
 
 ## What it looks like
 
@@ -126,6 +126,14 @@ Events appear next to your tasks as solid colored cards, including repeating and
 ## Time tracking
 
 Every task has a stopwatch. Press **▶** on a table row, on a timeline bar, or **Start** in the task editor; press it again (or start another task) to stop. The minutes land in the task's **Actual (min)** for that day, next to the planned **Duration (min)**, and the day header shows the total (`3/10 done · 1h 20m tracked`). The command **Start or stop the timer for the selected task** does the same from the keyboard. Only one timer runs at a time, it keeps running while Obsidian is closed, and it belongs to the device it was started on; the logged minutes sync like any other task data.
+
+## Status follows the clock
+
+When a task's start time arrives, **Not started** becomes **In progress**; when its end time passes, it becomes **Done** (for repeating tasks, only that day's occurrence). Only the moments that pass are applied, so if you change a status by hand afterwards it stays as you set it, and custom statuses are never touched. Opening Obsidian catches up on what happened while it was closed. Turn it off per device in **Settings → Status follows the clock**.
+
+## The task happening now
+
+The task in progress right now stands out in every view: an accent ring and glow, a **Now · 25m left** pill with a live dot, and a fill that shows how far through it you are (along the bar on the Timeline, along the bottom edge of a Board card, down a Calendar block; the Table row gets a tinted background and an accent rail). When it ends, it goes back to normal and the next task takes over.
 
 ## Reminders
 

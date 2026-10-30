@@ -1,5 +1,5 @@
 import { Notice, Platform, Plugin, TFile, requestUrl } from "obsidian";
-import { DEFAULT_SYNC_PATH, LAYOUT_LABEL, TOMBSTONE_MS, VIEW_TYPE, cleanNotify, cleanSyncPath, cleanView, clockLabel, defaultNotify, defaultStore, isPristineSeed, mergeAppData, normalizeAppData, occurs, parseOpts, playTone, seedTasks, uid, ymd } from "./util";
+import { DEFAULT_SYNC_PATH, LAYOUT_LABEL, TOMBSTONE_MS, VIEW_TYPE, cleanNotify, cleanSyncPath, cleanView, clockLabel, defaultNotify, defaultStore, doneStatus, idleStatus, isPristineSeed, nowOccurrence, occSpan, progressStatus, statusOf, withStatus, mergeAppData, normalizeAppData, occurs, parseOpts, playTone, seedTasks, uid, ymd } from "./util";
 import { expandIcs, parseIcs } from "./ics";
 import { BoardChild, TimelineView } from "./view";
 import { BaseSwitcherModal, RoutineSettingTab } from "./modals";
@@ -13,6 +13,9 @@ export class RoutineTimelinePlugin extends Plugin {
   declare snap: any;
   declare notify: any;
   declare timer: any;
+  declare clock: any;
+  declare nowSig: string;
+  declare clockSaved: number;
   declare notified: any;
   declare notifiedDay: any;
   declare boards: any;
@@ -33,6 +36,9 @@ export class RoutineTimelinePlugin extends Plugin {
     // The one running stopwatch on this device: { taskId, baseId, date, startedAt }. Per device,
     // like reminders, so it is kept in local data and never in the synced file.
     this.timer = null;
+    // Statuses that follow the clock (per device): on/off, and when this device last applied them.
+    this.clock = { autoStatus: true, last: 0 };
+    this.nowSig = "";
     this.notified = /* @__PURE__ */ new Set();
     this.notifiedDay = "";
     this.boards = /* @__PURE__ */ new Set();
@@ -55,6 +61,8 @@ export class RoutineTimelinePlugin extends Plugin {
     if (raw) this.notify = cleanNotify(raw.notify);
     const tm = raw && raw.timer;
     if (tm && typeof tm === "object" && typeof tm.taskId === "string" && typeof tm.baseId === "string" && typeof tm.date === "string" && Number.isFinite(tm.startedAt)) this.timer = { taskId: tm.taskId, baseId: tm.baseId, date: tm.date, startedAt: tm.startedAt };
+    const ck = raw && raw.clock;
+    if (ck && typeof ck === "object") this.clock = { autoStatus: ck.autoStatus !== false, last: Number.isFinite(ck.last) ? ck.last : 0 };
     const local = normalizeAppData(raw);
     const fromVault = await this.readSyncFile();
     if (fromVault) {
@@ -69,7 +77,7 @@ export class RoutineTimelinePlugin extends Plugin {
     }
     this.takeSnapshot();
     const pushLocal = !fromVault && local && !isPristineSeed(local);
-    if (this.app && this.app.workspace) this.app.workspace.onLayoutReady(() => void this.startSync(pushLocal));
+    if (this.app && this.app.workspace) this.app.workspace.onLayoutReady(() => void this.startSync(pushLocal).then(() => this.clockTick()));
     this.registerView(VIEW_TYPE, (leaf) => new TimelineView(leaf, this));
     this.addRibbonIcon("gantt-chart", "Open timeline view", () => void this.openView());
     this.addCommand({
@@ -258,7 +266,7 @@ export class RoutineTimelinePlugin extends Plugin {
     for (const b of this.boards) b.render();
   }
   saveLocal() {
-    return this.saveData({ ...this.appData, syncPath: this.syncPath, notify: this.notify, timer: this.timer });
+    return this.saveData({ ...this.appData, syncPath: this.syncPath, notify: this.notify, timer: this.timer, clock: this.clock });
   }
   // ---- task reminders ------------------------------------------------------------------
   // Fires once per task per day, inside a 2-minute window after the reminder time, so opening
@@ -270,8 +278,79 @@ export class RoutineTimelinePlugin extends Plugin {
     this.reminderTimer = window.setTimeout(() => {
       this.checkReminders();
       this.tickTimer();
+      void this.clockTick();
       this.scheduleReminderTick();
     }, delay);
+  }
+  // ---- the clock: statuses that follow the time, and the task happening now ------------------
+  async clockTick(now = Date.now()) {
+    const changed = await this.applyClockStatuses(now);
+    const sig = this.nowSignature(new Date(now));
+    if (changed) {
+      this.nowSig = sig;
+      await this.save();
+    } else if (sig !== this.nowSig) {
+      // A task just began or ended: re-render so the highlight moves to the new current task.
+      this.nowSig = sig;
+      for (const b of this.boards) b.render();
+    } else {
+      for (const b of this.boards) b.updateNow(now);
+    }
+  }
+  nowSignature(now) {
+    const ids = [];
+    for (const t of this.store.tasks) {
+      const o = nowOccurrence(t, now);
+      if (o) ids.push(`${t.id}@${o.key}`);
+    }
+    return ids.sort().join(",");
+  }
+  // When a task's start time passes, "Not started" becomes "In progress"; when its end passes,
+  // "Not started" or "In progress" becomes done. Only the moments that passed since this device
+  // last looked are applied, so a status you change by hand afterwards is left alone. Opening
+  // Obsidian catches up on what happened while it was closed (up to two days back; the first run
+  // looks back to midnight).
+  async applyClockStatuses(now = Date.now()) {
+    const c = this.clock;
+    const today0 = new Date(new Date(now).setHours(0, 0, 0, 0)).getTime();
+    const from = Math.max(c.last || today0, now - 2 * 864e5);
+    c.last = now;
+    if (!c.autoStatus || now <= from) {
+      await this.saveClockMark(now);
+      return false;
+    }
+    let changed = false;
+    for (const base of this.appData.bases) {
+      const sts = base.store.statuses;
+      const idle = idleStatus(sts), prog = progressStatus(sts), done = doneStatus(sts);
+      if (!idle || !done) continue;
+      const d0 = new Date(from);
+      for (const t of base.store.tasks) {
+        for (let d = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() - 1); d.getTime() <= now; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
+          if (!occurs(t, d)) continue;
+          const { s, e } = occSpan(t, d);
+          const key = t.date !== null ? t.date : ymd(d);
+          const cur = statusOf(t, key, sts);
+          if (e > from && e <= now) {
+            if (cur.id === idle.id || prog && cur.id === prog.id) {
+              withStatus(t, key, done, sts);
+              changed = true;
+            }
+          } else if (prog && s > from && s <= now && e > now && cur.id === idle.id) {
+            withStatus(t, key, prog, sts);
+            changed = true;
+          }
+        }
+      }
+    }
+    if (!changed) await this.saveClockMark(now);
+    return changed;
+  }
+  // Remember the last check without rewriting data.json every minute (a status change saves anyway).
+  async saveClockMark(now) {
+    if (now - (this.clockSaved || 0) < 10 * 6e4) return;
+    this.clockSaved = now;
+    await this.saveLocal();
   }
   // ---- time tracking: a stopwatch per task, logging actual minutes per day ----------------
   isRunning(t) {

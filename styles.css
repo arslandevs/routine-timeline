@@ -650,7 +650,7 @@
 .rt-tr:hover {
 	background: var(--background-modifier-hover);
 }
-.rt-tr.is-done .rt-td-name span:last-child {
+.rt-tr.is-done .rt-td-name .rt-name-text {
 	text-decoration: line-through;
 	opacity: 0.6;
 }
@@ -2119,4 +2119,113 @@ td.is-running .rt-play,
 }
 .rt-elapsed {
 	font-variant-numeric: tabular-nums;
+}
+
+/* ---- The task happening now ------------------------------------------------------
+   One clear focal point: an accent ring and soft glow, a "Now · 25m left" pill with a live dot,
+   and a fill that shows how far through the task you are. It moves to the next task when this
+   one ends. */
+.rt-now-pill {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	gap: 5px;
+	padding: 1px 8px 1px 6px;
+	border-radius: 999px;
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	font-size: 10.5px;
+	font-weight: 600;
+	line-height: 16px;
+	letter-spacing: 0.02em;
+	white-space: nowrap;
+	text-decoration: none;
+	opacity: 1;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+.rt-now-dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: currentColor;
+	animation: rt-now-pulse 1.8s ease-out infinite;
+}
+@keyframes rt-now-pulse {
+	0% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7); }
+	70% { box-shadow: 0 0 0 5px rgba(255, 255, 255, 0); }
+	100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+	.rt-now-dot { animation: none; }
+}
+
+/* Timeline: the current bar grows to the full row height, rises above its neighbours and glows. */
+.rt-bar.is-now {
+	top: 1px;
+	bottom: 1px;
+	z-index: 5;
+}
+.rt-bar.is-now .rt-bar-in {
+	font-weight: 600;
+	box-shadow: 0 0 0 2px var(--interactive-accent), 0 8px 20px -6px color-mix(in srgb, var(--interactive-accent) 60%, transparent);
+	background-image: linear-gradient(90deg, color-mix(in srgb, var(--rt-fg) 13%, transparent) var(--rt-prog, 0%), transparent var(--rt-prog, 0%));
+}
+.rt-bar.is-now .rt-now-pill {
+	margin-left: 4px;
+}
+.rt-bar.is-now.is-narrow .rt-now-pill {
+	display: none;
+}
+.rt-bar.is-now.is-running .rt-bar-in {
+	box-shadow: 0 0 0 2px var(--color-red), 0 8px 20px -6px color-mix(in srgb, var(--color-red) 55%, transparent);
+}
+
+/* Table: a tinted row with an accent rail on the left and the pill after the name. */
+.rt-tr.is-now > td {
+	background: color-mix(in srgb, var(--interactive-accent) 9%, transparent);
+}
+.rt-tr.is-now > td:first-child {
+	box-shadow: inset 3px 0 0 var(--interactive-accent);
+}
+.rt-tr.is-now .rt-name-text {
+	font-weight: 600;
+}
+.rt-td-name .rt-now-pill {
+	margin-left: 8px;
+	vertical-align: 1px;
+}
+
+/* Board: the current card lifts, glows and shows its progress along the bottom edge. */
+.rt-card {
+	position: relative;
+}
+.rt-card.is-now {
+	box-shadow: 0 0 0 2px var(--interactive-accent), 0 10px 24px -8px color-mix(in srgb, var(--interactive-accent) 60%, transparent);
+	transform: translateY(-1px);
+	overflow: hidden;
+}
+.rt-card.is-now .rt-title {
+	font-weight: 600;
+}
+.rt-card.is-now > .rt-now-pill {
+	margin-top: 6px;
+}
+.rt-card.is-now::after {
+	content: "";
+	position: absolute;
+	left: 0;
+	bottom: 0;
+	height: 3px;
+	width: var(--rt-prog, 0%);
+	background: var(--interactive-accent);
+}
+
+/* Calendar: ring and weight on the current chip or block. */
+.rt-cal-chip.is-now {
+	box-shadow: 0 0 0 2px var(--interactive-accent), 0 6px 16px -6px color-mix(in srgb, var(--interactive-accent) 55%, transparent);
+	font-weight: 600;
+	z-index: 3;
+}
+.rt-cal-chip.is-block.is-now {
+	background-image: linear-gradient(180deg, color-mix(in srgb, var(--rt-fg) 12%, transparent) var(--rt-prog, 0%), transparent var(--rt-prog, 0%));
 }

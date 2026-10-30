@@ -1,6 +1,6 @@
 {
   "name": "routine-timeline",
-  "version": "0.25.2",
+  "version": "0.26.0",
   "description": "Plan tasks and routines in Obsidian with Table, Board, Timeline and Calendar views, repeating tasks, time tracking, reminders and sync through a vault file.",
   "main": "main.js",
   "private": true,

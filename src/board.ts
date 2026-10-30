@@ -1,5 +1,5 @@
 import { Menu, Notice, Platform, setIcon } from "obsidian";
-import { CALC_LABEL, CAL_LABEL, CAL_VIEWS, COLORS, COLOR_OPS, CUSTOM_LABEL, CUSTOM_TYPES, CUSTOM_TYPE_ICON, DAY, DEFAULT_LEN, EXTRA_STATUS_COLORS, HEAD_H, HOURS_W, HOUR_H, LAYOUTS, LAYOUT_ICON, LAYOUT_LABEL, MIN_HOUR_W, PROP_ICON, ROW_H, SNAP, SVG_NS, ZOOMS, ZOOM_LABEL, ZOOM_MIN_DAY_W, clamp, clockLabel, curve, dayIndex, defaultProps, doneStatus, endClock, fmt, fmtDur, groupLabel, hhmm, hourLabel, hourLabelShort, occurs, overnightEnd, pad, parseHHMM, parseYmd, repeatLabel, statusOf, uid, withStatus, ymd } from "./util";
+import { CALC_LABEL, CAL_LABEL, CAL_VIEWS, COLORS, COLOR_OPS, CUSTOM_LABEL, CUSTOM_TYPES, CUSTOM_TYPE_ICON, DAY, DEFAULT_LEN, EXTRA_STATUS_COLORS, HEAD_H, HOURS_W, HOUR_H, LAYOUTS, LAYOUT_ICON, LAYOUT_LABEL, MIN_HOUR_W, PROP_ICON, ROW_H, SNAP, SVG_NS, ZOOMS, ZOOM_LABEL, ZOOM_MIN_DAY_W, clamp, clockLabel, curve, dayIndex, defaultProps, doneStatus, endClock, fmt, fmtDur, groupLabel, hhmm, hourLabel, hourLabelShort, nowOccurrence, occurs, overnightEnd, pad, parseHHMM, parseYmd, repeatLabel, statusOf, uid, withStatus, ymd } from "./util";
 import { AddFeedModal, BaseSwitcherModal, ColorPickModal, ConfirmModal, EditTasksModal, EventModal, TaskModal } from "./modals";
 
 export class TimelineBoard {
@@ -209,6 +209,38 @@ export class TimelineBoard {
     }
     const n = prev.n + cur.n + next.n;
     return { start, n, dayW, total: n * dayW, cells, label: cur.label, startStr: prev.startStr, endStr: next.endStr, i0: prev.n, n0: cur.n };
+  }
+  // The occurrence of t that is happening right now, if it is the one for status date `key`.
+  nowFor(t, key) {
+    const o = nowOccurrence(t);
+    return o && o.key === key ? o : null;
+  }
+  // Mark el as the current task: the class drives the highlight; data attributes let the
+  // minute tick refresh the "Now · 25m left" pill and the progress fill without a re-render.
+  markNow(el, t, key, pillParent?) {
+    const o = this.nowFor(t, key);
+    el.toggleClass("is-now", !!o);
+    if (!o) return;
+    el.dataset.nowS = String(o.s);
+    el.dataset.nowE = String(o.e);
+    if (pillParent) {
+      const pill = pillParent.createSpan({ cls: "rt-now-pill" });
+      pill.createSpan({ cls: "rt-now-dot" });
+      pill.createSpan({ cls: "rt-now-text" });
+    }
+    this.paintNow(el, Date.now());
+  }
+  paintNow(el, now) {
+    const s = Number(el.dataset.nowS), e = Number(el.dataset.nowE);
+    const pct = Math.max(0, Math.min(100, (now - s) / (e - s) * 100));
+    el.setCssProps({ "--rt-prog": `${pct.toFixed(1)}%` });
+    const left = Math.max(0, Math.ceil((e - now) / 6e4));
+    const txt = el.querySelector(".rt-now-text");
+    if (txt) txt.textContent = `Now \u00b7 ${fmtDur(left)} left`;
+  }
+  // Refresh the current task's pill and progress fill (runs every minute with the now-line).
+  paintNowTasks(now = Date.now()) {
+    for (const el of this.host.querySelectorAll(".is-now[data-now-e]")) this.paintNow(el, now);
   }
   statusKey(t) {
     return t.date !== null ? t.date : this.sp ? ymd(/* @__PURE__ */ new Date()) : this.dayStr;
@@ -1234,6 +1266,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       el.createSpan({ cls: "rt-cal-time", text: `${pad(hh)}:${pad(it.start % 60)}` });
     }
     el.createSpan({ cls: "rt-cal-title", text: it.title });
+    if (it.kind === "task" && it.t && !it.allDay) this.markNow(el, it.t, it.t.date !== null ? it.t.date : ymd(it.from || date));
     el.onclick = (ev) => {
       ev.stopPropagation();
       this.openCalItem(it, date);
@@ -1551,6 +1584,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       const tr = tb.createEl("tr", { cls: "rt-tr" });
       tr.toggleClass("is-done", this.isDone(t2));
       tr.toggleClass("is-selected", this.selected.has(t2.id));
+      this.markNow(tr, t2, this.statusKey(t2));
       const ruleColor = this.rowColor(t2, byId);
       tr.toggleClass("has-rule-color", !!ruleColor);
       if (ruleColor) tr.addClass(`rt-c-${ruleColor}`);
@@ -1766,6 +1800,11 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
       td.addClass("rt-td-name");
       td.createSpan({ cls: `rt-dot rt-c-${t2.color}` });
       td.createSpan({ cls: "rt-name-text", text: t2.title || "Untitled" });
+      if (this.nowFor(t2, this.statusKey(t2))) {
+        const pill = td.createSpan({ cls: "rt-now-pill" });
+        pill.createSpan({ cls: "rt-now-dot" });
+        pill.createSpan({ cls: "rt-now-text", text: "Now" });
+      }
       const ob = td.createEl("button", { cls: "rt-open", attr: { "aria-label": "Open in side panel" } });
       setIcon(ob.createSpan(), "panel-right");
       ob.createSpan({ text: "OPEN" });
@@ -2758,6 +2797,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
         cb.onchange = () => void this.toggleDone(t, cb.checked);
         top.createSpan({ cls: "rt-title", text: t.title || "Untitled" });
         if (t.date === null) setIcon(top.createSpan({ cls: "rt-repeat" }), "repeat");
+        this.markNow(card, t, this.statusKey(t), card);
         const meta = card.createDiv("rt-card-meta");
         meta.createSpan({ text: `${fmt(t.start)} \u2013 ${fmt(t.end)}` });
         if (t.group) meta.createSpan({ cls: "rt-chip-sm", text: t.group });
@@ -2885,6 +2925,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${t.date === null ? ` \xB7 ${repeatLabel(t).
     });
   }
   updateNow() {
+    this.paintNowTasks();
     if (this.calNow) this.updateCalNow();
     if (!this.nowEl) return;
     const d = /* @__PURE__ */ new Date();
@@ -2993,6 +3034,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${spent ? ` \xB7 ${fmtDur(spent)} tracked` :
       this.attachLink(bar.createDiv("rt-link"), t);
     }
     this.place(bar, t, this.X0 + k * this.hw * 24);
+    this.markNow(bar, t, key, inner);
     this.attachDrag(bar, t, k, key);
     return bar;
   }
