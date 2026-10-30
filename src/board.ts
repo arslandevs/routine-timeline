@@ -2942,85 +2942,21 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${spent ? ` \xB7 ${fmtDur(spent)} tracked` :
     if (list) list.push(k);
     else this.barInstances.set(id, [k]);
   }
-  // Yesterday's and tomorrow's occurrence of a task: shown beside today's, and fully editable once you scroll to that day.
+  // Yesterday's and tomorrow's occurrence of a task, shown beside today's in the same row.
   neighbourBar(row, t, k) {
     const d = new Date(this.day.getFullYear(), this.day.getMonth(), this.day.getDate() + k);
     if (!occurs(t, d)) return;
-    this.markBarInstance(t.id, k);
-    const key = ymd(d);
-    const bar = row.createDiv({ cls: `rt-bar is-neighbour rt-c-${this.rowColor(t, this.byIdAll) || t.color}` });
-    bar.dataset.id = t.id;
-    const done = t.doneDates.includes(t.date !== null ? t.date : key);
-    bar.toggleClass("is-done", done);
-    const inner = bar.createDiv("rt-bar-in");
-    const cb = inner.createEl("input", { cls: "rt-check", type: "checkbox" });
-    cb.checked = done;
-    cb.onchange = () => void this.toggleDone(t, cb.checked, key);
-    inner.createSpan({ cls: "rt-title", text: t.title || "Untitled" });
-    if (t.date === null) setIcon(inner.createSpan({ cls: "rt-repeat" }), "repeat");
-    this.place(bar, t, this.X0 + k * this.hw * 24);
-    bar.onclick = (e) => {
-      if (e.target.closest("input")) return;
-      // The editor takes the day it is for (its status is per day); put today's back straight after.
-      const keep = this.dayStr;
-      this.dayStr = key;
-      this.editTask(t);
-      this.dayStr = keep;
-    };
+    this.buildBar(row, t, k);
   }
   // Used when each of the three visible days packs its own rows independently (the common,
   // ungrouped Timeline case): one bar per (task, day) instance, positioned at that day's own
   // compact row index instead of sharing a row with the task's other-day instances.
   renderDayBar(parent, t, k, rowIndex) {
     const row = parent.createDiv("rt-row");
-    row.setCssStyles({ position: "absolute" });
-    row.setCssStyles({ left: "0" });
-    row.setCssStyles({ right: "0" });
+    row.setCssStyles({ position: "absolute", left: "0", right: "0" });
     row.style.top = `${rowIndex * ROW_H}px`;
     row.style.height = `${ROW_H}px`;
-    this.markBarInstance(t.id, k);
-    if (k === 0) {
-      const isDone = this.isDone(t);
-      const bar = row.createDiv({ cls: `rt-bar rt-c-${this.rowColor(t, this.byIdAll) || t.color}` });
-      bar.dataset.id = t.id;
-      bar.toggleClass("is-done", isDone);
-      bar.toggleClass("is-selected", this.selectedId === t.id);
-      const inner = bar.createDiv("rt-bar-in");
-      const cb = inner.createEl("input", { cls: "rt-check", type: "checkbox" });
-      cb.checked = isDone;
-      cb.onchange = () => void this.toggleDone(t, cb.checked);
-      inner.createSpan({ cls: "rt-title", text: t.title || "Untitled" });
-      if (t.date === null) setIcon(inner.createSpan({ cls: "rt-repeat" }), "repeat");
-      this.barTimer(bar, inner, t);
-      bar.createDiv("rt-edge rt-edge-l");
-      bar.createDiv("rt-edge rt-edge-r");
-      const link = bar.createDiv("rt-link");
-      this.bars.set(t.id, bar);
-      this.place(bar, t);
-      this.attachDrag(bar, t);
-      this.attachLink(link, t);
-      return;
-    }
-    const d = new Date(this.day.getFullYear(), this.day.getMonth(), this.day.getDate() + k);
-    const key = ymd(d);
-    const bar = row.createDiv({ cls: `rt-bar is-neighbour rt-c-${this.rowColor(t, this.byIdAll) || t.color}` });
-    bar.dataset.id = t.id;
-    const done = t.doneDates.includes(t.date !== null ? t.date : key);
-    bar.toggleClass("is-done", done);
-    const inner = bar.createDiv("rt-bar-in");
-    const cb = inner.createEl("input", { cls: "rt-check", type: "checkbox" });
-    cb.checked = done;
-    cb.onchange = () => void this.toggleDone(t, cb.checked, key);
-    inner.createSpan({ cls: "rt-title", text: t.title || "Untitled" });
-    if (t.date === null) setIcon(inner.createSpan({ cls: "rt-repeat" }), "repeat");
-    this.place(bar, t, this.X0 + k * this.hw * 24);
-    bar.onclick = (e) => {
-      if (e.target.closest("input")) return;
-      const keep = this.dayStr;
-      this.dayStr = key;
-      this.editTask(t);
-      this.dayStr = keep;
-    };
+    this.buildBar(row, t, k);
   }
   renderTask(parent, t) {
     const row = parent.createDiv("rt-row");
@@ -3028,42 +2964,55 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${spent ? ` \xB7 ${fmtDur(spent)} tracked` :
     this.neighbourBar(row, t, -1);
     this.neighbourBar(row, t, 1);
     if (!occurs(t, this.day)) return;
-    this.markBarInstance(t.id, 0);
-    const isDone = this.isDone(t);
+    this.buildBar(row, t, 0);
+  }
+  // One bar for task t on visible day k (-1 yesterday, 0 the selected day, 1 tomorrow).
+  // Every instance is fully interactive (drag, resize, tick, timer, edit), each for its own date,
+  // so a late task from yesterday that runs into today can be moved without going back a day.
+  buildBar(row, t, k) {
+    const d = new Date(this.day.getFullYear(), this.day.getMonth(), this.day.getDate() + k);
+    const key = k === 0 ? this.dayStr : ymd(d);
+    this.markBarInstance(t.id, k);
+    const done = k === 0 ? this.isDone(t) : t.doneDates.includes(t.date !== null ? t.date : key);
     const bar = row.createDiv({ cls: `rt-bar rt-c-${this.rowColor(t, this.byIdAll) || t.color}` });
+    bar.toggleClass("is-neighbour", k !== 0);
     bar.dataset.id = t.id;
-    bar.toggleClass("is-done", isDone);
+    bar.toggleClass("is-done", done);
     bar.toggleClass("is-selected", this.selectedId === t.id);
     const inner = bar.createDiv("rt-bar-in");
     const cb = inner.createEl("input", { cls: "rt-check", type: "checkbox" });
-    cb.checked = isDone;
-    cb.onchange = () => void this.toggleDone(t, cb.checked);
+    cb.checked = done;
+    cb.onchange = () => void this.toggleDone(t, cb.checked, key);
     inner.createSpan({ cls: "rt-title", text: t.title || "Untitled" });
     if (t.date === null) setIcon(inner.createSpan({ cls: "rt-repeat" }), "repeat");
-    this.barTimer(bar, inner, t);
+    this.barTimer(bar, inner, t, key);
     bar.createDiv("rt-edge rt-edge-l");
     bar.createDiv("rt-edge rt-edge-r");
-    const link = bar.createDiv("rt-link");
-    this.bars.set(t.id, bar);
-    this.place(bar, t);
-    this.attachDrag(bar, t);
-    this.attachLink(link, t);
+    if (k === 0) {
+      this.bars.set(t.id, bar);
+      this.attachLink(bar.createDiv("rt-link"), t);
+    }
+    this.place(bar, t, this.X0 + k * this.hw * 24);
+    this.attachDrag(bar, t, k, key);
+    return bar;
   }
-  // Stopwatch on a timeline bar: a play/stop button at the right end, and the tracked time while it runs.
-  barTimer(bar, inner, t) {
+  // Stopwatch on a timeline bar: a round play/stop button pinned to the bar's left (shown on
+  // hover, while selected or running) and the tracked time while it runs.
+  barTimer(bar, inner, t, date = this.dayStr) {
     const running = this.plugin.isRunning(t);
     bar.toggleClass("is-running", running);
-    const mins = this.plugin.actualOn(t, this.dayStr);
+    const mins = this.plugin.actualOn(t, date);
     if (mins || running) {
       const el = inner.createSpan({ cls: "rt-elapsed rt-bar-elapsed", text: fmtDur(mins) });
       el.dataset.id = t.id;
-      el.dataset.date = this.dayStr;
+      el.dataset.date = date;
     }
-    this.playButton(inner, t, this.dayStr);
+    this.playButton(bar, t, date).addClass("rt-bar-play");
   }
   // Move the bar, or drag either edge to change the start or end time.
   // Mouse: drag directly. Touch: tap to select first, then drag, so scrolling still works.
-  attachDrag(bar, t) {
+  attachDrag(bar, t, k = 0, key = this.dayStr) {
+    const off = this.X0 + k * this.hw * 24;
     let lastDragEnd = 0;
     let lastType = "mouse";
     bar.addEventListener("pointerdown", (e) => {
@@ -3095,7 +3044,7 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${spent ? ` \xB7 ${fmtDur(spent)} tracked` :
         } else {
           t.end = clamp(e0 + dm, s0 + SNAP, s0 + DAY);
         }
-        this.place(bar, t);
+        this.place(bar, t, off);
         this.drawDeps();
       };
       const onUp = async () => {
@@ -3127,7 +3076,11 @@ ${fmt(t.start)} \u2013 ${fmt(t.end)}${spent ? ` \xB7 ${fmtDur(spent)} tracked` :
         return;
       }
       this.select(t.id);
+      // The editor works on one day's status: open it for the day this bar is on.
+      const keep = this.dayStr;
+      this.dayStr = key;
       this.editTask(t);
+      this.dayStr = keep;
     });
   }
   // Drag from the dot at the end of a bar onto another bar to connect them.

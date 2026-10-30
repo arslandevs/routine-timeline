@@ -8,7 +8,7 @@ A Notion-style task and routine planner for Obsidian. One set of tasks, four lay
 
 **[⬇ Download the latest release](https://github.com/arslandevs/routine-timeline/releases/latest)** · [Install](#install) · [Views](#views) · [Tasks](#tasks) · [Time tracking](#time-tracking) · [Reminders](#reminders) · [Sync](#sync-between-devices) · [Development](#development)
 
-> **Status: v0.25.1, in daily use but still young.** The regression tests in [`tests/`](tests) run the real plugin in a headless DOM (`npm test`) and cover sync, time tracking, overnight tasks, reminders and the phone layout. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
+> **Status: v0.25.2, in daily use but still young.** The regression tests in [`tests/`](tests) run the real plugin in a headless DOM (`npm test`) and cover sync, time tracking, overnight tasks, reminders and the phone layout. Please open an issue if something misbehaves, especially dragging inside a note in Live Preview.
 
 ## What it looks like
 

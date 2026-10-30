@@ -2029,17 +2029,71 @@ td.is-running .rt-play,
 .is-phone td .rt-play {
 	opacity: 1;
 }
-.rt-bar .rt-play {
-	margin-left: auto;
+/* Timeline bar: round, high-contrast play/stop pinned to the bar's left. Hidden until you hover
+   (or select, or it is running); the title slides right so the button never hides it. */
+.rt-bar > .rt-bar-play {
+	position: absolute;
+	top: 50%;
+	left: 8px;
+	z-index: 4;
+	width: 22px;
+	height: 22px;
+	transform: translateY(-50%);
+	background: rgba(17, 17, 17, 0.86);
+	color: #fff;
+	border: 1.5px solid rgba(255, 255, 255, 0.9);
+	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
 	opacity: 0;
+	pointer-events: none;
+	transition: opacity 120ms ease, transform 120ms ease;
 }
-.rt-bar:hover .rt-play,
-.rt-bar.is-selected .rt-play,
-.rt-bar.is-running .rt-play {
+.rt-bar > .rt-bar-play svg {
+	width: 10px;
+	height: 10px;
+	fill: currentColor;
+}
+.rt-bar > .rt-bar-play:hover {
+	transform: translateY(-50%) scale(1.08);
+}
+.rt-bar > .rt-bar-play.is-on {
+	background: var(--color-red);
+}
+.rt-bar:hover > .rt-bar-play,
+.rt-bar.is-selected > .rt-bar-play,
+.rt-bar.is-running > .rt-bar-play {
 	opacity: 1;
+	pointer-events: auto;
 }
-.rt-bar.is-narrow .rt-play,
+.rt-bar .rt-bar-in {
+	transition: padding-left 120ms ease;
+}
+.rt-bar:hover .rt-bar-in,
+.rt-bar.is-selected .rt-bar-in,
+.rt-bar.is-running .rt-bar-in {
+	padding-left: 36px;
+}
+.rt-bar.is-narrow > .rt-bar-play {
+	left: 5px;
+}
+.rt-bar.is-narrow:hover .rt-bar-in,
+.rt-bar.is-narrow.is-selected .rt-bar-in,
+.rt-bar.is-narrow.is-running .rt-bar-in {
+	padding-left: 30px;
+}
+/* Too short to hold it: the button sits just outside the bar's left edge instead. */
+.rt-bar.is-tiny > .rt-bar-play {
+	left: auto;
+	right: calc(100% + 4px);
+}
+.rt-bar.is-tiny:hover .rt-bar-in,
+.rt-bar.is-tiny.is-selected .rt-bar-in,
+.rt-bar.is-tiny.is-running .rt-bar-in {
+	padding-left: 2px;
+}
 .rt-bar.is-narrow .rt-bar-elapsed {
+	display: none;
+}
+.rt-bar-elapsed {
 	display: none;
 }
 .rt-bar-elapsed {
